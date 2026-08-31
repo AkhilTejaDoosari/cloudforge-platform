@@ -10,7 +10,7 @@
 | 6 | Provision ECR/EKS, deploy application | ⚠️ Terraform code + plan validated; apply not run (KodeKloud session friction — see notes) |
 | 7 | ArgoCD + GitOps | ✅ Done (on local kind cluster) |
 | 8 | Prometheus, Grafana, Loki | ✅ Done (on local kind cluster) |
-| 9 | Security hardening + operational testing | Not started |
+| 9 | Security hardening + operational testing | ✅ Done (on local kind cluster) |
 | 10 | Failure testing, rollback, DR docs, final README | Not started |
 
 ## Phase 1 Notes
@@ -414,3 +414,74 @@ running continuously since then.
     `Kubernetes / Compute Resources / Namespace (Pods)`, which directly
     covers `cloudforge-dev`'s workloads) — proving Grafana can actually
     query both backends end-to-end, not just that the pods exist.
+
+## Phase 9 Notes (Reliability + Security Testing)
+
+All 10 tests run against the live local kind cluster with real evidence
+captured, not asserted:
+
+1. **Backend pod delete → recreated.** Deleted `backend-...-hk5nk`; a new
+   pod (`...9g26q`) reached `Ready` in 7s.
+2. **Frontend pod delete → recreated.** Same pattern; new pod Ready in 6s.
+3. **PostgreSQL stopped → dependency behavior → recovery, done properly.**
+   First attempt (`kubectl scale postgres --replicas=0`) was immediately
+   *undone by ArgoCD's own selfHeal* — a real finding: Phase 7's GitOps
+   automation actively resists exactly this kind of manual chaos injection,
+   since `replicas: 1` is the Git-committed desired state. Correct fix:
+   temporarily disabled `spec.syncPolicy.automated` on the Application,
+   re-ran the test cleanly (`/api/status` → `database: disconnected`,
+   `/health` stayed `ok`, backend pods stayed `Ready` throughout), restored
+   Postgres, then re-enabled automated sync and confirmed `Synced/Healthy`
+   again. Documented as the correct practice for chaos-testing a
+   GitOps-managed cluster: pause automation first, don't fight it.
+4. **Readiness probes.** Confirmed live config on all 3 workloads
+   (`/health` for backend, `/` for frontend, `pg_isready` exec for
+   postgres); already exercised indirectly by tests 1-2, since
+   `kubectl wait --for=condition=ready` only succeeds once the readiness
+   probe passes.
+5. **Liveness probes — actually triggered a real restart, not just
+   inspected config.** First attempt: sent `SIGSTOP` then `SIGKILL`
+   directly to the container's PID 1 via `kubectl exec`. Neither had any
+   effect — a genuinely interesting finding: Linux specially protects PID 1
+   inside a container's PID namespace from signals it hasn't installed a
+   handler for, even normally-uncatchable ones. Pivoted to testing the
+   actual mechanism instead: patched the backend's `livenessProbe` path to
+   a nonexistent endpoint (readiness probe left untouched, to isolate that
+   the *liveness* check specifically causes the restart) — captured the
+   exact kubelet events: `Liveness probe failed: HTTP probe failed with
+   statuscode: 404` → `Killing: Container backend failed liveness probe,
+   will be restarted`, and `RESTARTS` incremented 0→1. Reverted via
+   `kubectl apply -k` (restoring git-tracked state) and re-enabled
+   automated sync (disabled first, same reasoning as test 3).
+6. **Deliberately broken deployment + rollback — done the GitOps-correct
+   way.** Changed `backend`'s image to a nonexistent tag
+   (`cloudforge-backend:broken-deliberate-test`), committed, pushed.
+   ArgoCD synced it; new pod showed `ErrImagePull` →
+   `ImagePullBackOff` (`pull access denied, repository does not exist`),
+   while **the two old pods stayed Running** — Kubernetes' rolling-update
+   strategy prevented any outage (`/api/status` kept responding normally
+   throughout). Rolled back with `git revert --no-edit HEAD` + push (not a
+   raw `kubectl rollout undo`, which ArgoCD's selfHeal would have fought)
+   — ArgoCD synced the revert, deployment recovered onto the *original*
+   ReplicaSet (`7d8dddd8fb`), confirmed `Synced/Healthy` and
+   `database: connected`.
+7. **Trivy against final images.** Rebuilt both images fresh
+   (`cloudforge-{backend,frontend}:final`) and re-ran the same CI gate
+   policy from Phase 4 (`--severity CRITICAL --ignore-unfixed`): both pass,
+   0 findings.
+8. **tfsec against Terraform.** Re-ran against the final module state:
+   0 CRITICAL, 0 HIGH, 1 documented ignore — unchanged from Phase 5/6.
+9. **Non-root containers — verified per-pod, and one honest gap found.**
+   `kubectl exec ... id -u`: backend → `10001`, frontend → `101`, both
+   non-root by design (Phase 2). **postgres → `0` (root)** — the official
+   `postgres:16-alpine` image's default; this project never hardened it,
+   since Phase 6's RDS module was meant to replace this local Postgres
+   entirely for a real deployment (RDS's OS layer isn't something a
+   Terraform user hardens directly). Documented truthfully rather than
+   omitted.
+10. **Git credential scan.** The exact specified command
+    (`git grep -n -E 'AKIA|ASIA|aws_secret_access_key|aws_session_token'`)
+    returned nothing. Went further: scanned full history
+    (`git log --all -p`), not just the current tree, and confirmed no
+    `secrets.env` or `terraform.tfvars` (the real, non-`.example` files)
+    were ever added in any commit. Clean.
