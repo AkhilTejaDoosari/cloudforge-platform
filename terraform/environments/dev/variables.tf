@@ -28,9 +28,20 @@ variable "private_subnet_cidrs" {
   default = ["10.0.10.0/24", "10.0.11.0/24"]
 }
 
+variable "cluster_iam_role_name" {
+  description = <<-EOT
+    Passed through to the eks module. Leave null for normal use (resolves to
+    "$${cluster_name}-cluster"). Set explicitly only for environments with an
+    external naming constraint, e.g. the KodeKloud sandbox lab — see
+    modules/eks/variables.tf and docs/phases.md's Phase 6 notes.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "node_instance_types" {
   type    = list(string)
-  default = ["t3.medium"]
+  default = ["t3.small"]
 }
 
 variable "node_desired_size" {
@@ -45,7 +56,19 @@ variable "node_min_size" {
 
 variable "node_max_size" {
   type    = number
-  default = 3
+  default = 2
+}
+
+variable "enable_rds" {
+  description = <<-EOT
+    Clean on/off switch for provisioning RDS. Defaults to true (normal
+    expected behavior for a real AWS account). Set false in
+    terraform.tfvars (gitignored) for environments where RDS can't be
+    provisioned — e.g. the KodeKloud sandbox lab, where rds:CreateDBInstance
+    is denied — without touching this file or using `-target`.
+  EOT
+  type        = bool
+  default     = true
 }
 
 variable "db_instance_class" {

@@ -10,6 +10,20 @@ github_org  = "AkhilTejaDoosari"
 github_repo = "cloudforge-platform"
 
 # Cost knobs — see README.md's cost table before changing these upward.
-node_instance_types = ["t3.medium"]
+node_instance_types = ["t3.small"]
 node_desired_size   = 2
 db_instance_class   = "db.t4g.micro"
+
+# --- Environment-specific overrides (normally leave both alone) ---
+#
+# cluster_iam_role_name: only set this if your AWS account has an external
+# constraint requiring one exact literal IAM role name for the EKS cluster
+# role (e.g. a lab sandbox whose IAM policy scopes iam:PassRole to
+# eks.amazonaws.com to a specific name). Example, not this project's real
+# value:
+# cluster_iam_role_name = "eksClusterRole"
+
+# enable_rds: set false only in an environment where RDS genuinely can't be
+# provisioned (e.g. rds:CreateDBInstance denied by IAM policy). Defaults to
+# true — leave it alone for a normal AWS account.
+# enable_rds = false

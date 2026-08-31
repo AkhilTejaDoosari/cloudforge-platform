@@ -13,6 +13,11 @@ locals {
     ["${chomp(data.http.my_ip.response_body)}/32"],
     var.additional_endpoint_public_access_cidrs,
   )
+
+  # Normally "${cluster_name}-cluster" (multi-cluster-safe within one AWS
+  # account). Override only when an external constraint demands one exact
+  # literal name — see var.cluster_iam_role_name's description.
+  cluster_iam_role_name = coalesce(var.cluster_iam_role_name, "${var.cluster_name}-cluster")
 }
 
 # ---------------------------------------------------------------------------
@@ -37,7 +42,7 @@ resource "aws_kms_alias" "eks_secrets" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "cluster" {
-  name = "${var.cluster_name}-cluster"
+  name = local.cluster_iam_role_name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -149,31 +154,168 @@ resource "aws_iam_role_policy_attachment" "node_ecr_readonly" {
 }
 
 # ---------------------------------------------------------------------------
-# Managed node group — worker nodes only ever go in private subnets.
+# Self-managed worker nodes (launch template + Auto Scaling Group), NOT a
+# managed node group (aws_eks_node_group).
+#
+# WHY: this project's KodeKloud sandbox lab account's IAM policy grants
+# eks:CreateCluster and iam:PassRole to eks.amazonaws.com (for a role named
+# exactly "eksClusterRole" — see var.cluster_iam_role_name), but does not
+# grant eks:CreateNodegroup or eks:CreateFargateProfile at all — confirmed
+# via `aws iam simulate-principal-policy` (a read-only permission check, no
+# resources created) before writing any of this. It does grant
+# ec2:RunInstances, autoscaling:CreateAutoScalingGroup, and iam:PassRole to
+# ec2.amazonaws.com, which is exactly what a self-managed node group needs.
+# This is a KodeKloud sandbox compatibility adaptation, not the production
+# default — a real AWS account with standard permissions should prefer
+# aws_eks_node_group (simpler: AWS handles AMI selection, bootstrap, and
+# rolling updates for you). This module still stays reusable there: nothing
+# here is KodeKloud-specific except var.cluster_iam_role_name's value,
+# supplied by the caller, not hardcoded in this module.
+#
+# Worker nodes only ever go in private subnets — same as before.
 # ---------------------------------------------------------------------------
 
-resource "aws_eks_node_group" "this" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "${var.cluster_name}-default"
-  node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.private_subnet_ids
-  instance_types  = var.node_instance_types
+resource "aws_iam_instance_profile" "node" {
+  name = "${var.cluster_name}-node"
+  role = aws_iam_role.node.name
+  tags = var.tags
+}
 
-  scaling_config {
-    desired_size = var.node_desired_size
-    min_size     = var.node_min_size
-    max_size     = var.node_max_size
+# Latest EKS-optimized Amazon Linux 2023 AMI matching the control plane's
+# Kubernetes version, resolved via AWS's published SSM parameter rather than
+# a hardcoded AMI ID (which would silently go stale and eventually mismatch
+# the control plane version).
+data "aws_ssm_parameter" "eks_ami" {
+  name = "/aws/service/eks/optimized-ami/${var.cluster_version}/amazon-linux-2023/x86_64/standard/recommended/image_id"
+}
+
+# AL2023's bootstrap mechanism ("nodeadm") takes a YAML NodeConfig via
+# user-data, not the older AL2 /etc/eks/bootstrap.sh shell-script format.
+# This is what actually joins each instance to the cluster on first boot.
+locals {
+  node_userdata = base64encode(<<-EOT
+    ---
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      cluster:
+        name: ${aws_eks_cluster.this.name}
+        apiServerEndpoint: ${aws_eks_cluster.this.endpoint}
+        certificateAuthority: ${aws_eks_cluster.this.certificate_authority[0].data}
+        cidr: ${aws_eks_cluster.this.kubernetes_network_config[0].service_ipv4_cidr}
+  EOT
+  )
+}
+
+resource "aws_launch_template" "node" {
+  name_prefix   = "${var.cluster_name}-node-"
+  image_id      = data.aws_ssm_parameter.eks_ami.value
+  instance_type = var.node_instance_types[0]
+  user_data     = local.node_userdata
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.node.name
   }
 
-  update_config {
-    max_unavailable = 1
+  # Reuses the cluster's own auto-created security group rather than
+  # hand-writing node<->control-plane rules (ports 443/10250 + ephemeral
+  # range) — this SG already has everything a managed node group's nodes
+  # would get automatically; self-managed nodes just have to attach it
+  # explicitly. This is AWS's own documented pattern for self-managed nodes.
+  vpc_security_group_ids = [aws_eks_cluster.this.vpc_config[0].cluster_security_group_id]
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 2          # nodeadm needs metadata access from inside containers
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = merge(var.tags, {
+      Name = "${var.cluster_name}-node"
+    })
   }
 
   tags = var.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_autoscaling_group" "node" {
+  name                      = "${var.cluster_name}-node"
+  vpc_zone_identifier       = var.private_subnet_ids
+  desired_capacity          = var.node_desired_size
+  min_size                  = var.node_min_size
+  max_size                  = var.node_max_size
+  health_check_type         = "EC2"
+  health_check_grace_period = 300 # time for nodeadm bootstrap + kubelet registration before a failed check triggers replacement
+
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.cluster_name}-node"
+    propagate_at_launch = true
+  }
+
+  # Required so AWS's own tooling (and, later, Cluster Autoscaler) recognizes
+  # these instances as belonging to this cluster — the same tag a managed
+  # node group would carry automatically.
+  tag {
+    key                 = "kubernetes.io/cluster/${var.cluster_name}"
+    value               = "owned"
+    propagate_at_launch = true
+  }
+
+  dynamic "tag" {
+    for_each = var.tags
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.node_worker,
     aws_iam_role_policy_attachment.node_cni,
     aws_iam_role_policy_attachment.node_ecr_readonly,
+    aws_eks_access_entry.node,
   ]
+}
+
+# ---------------------------------------------------------------------------
+# Cluster authentication for the worker role — access entries, not the
+# aws-auth ConfigMap. This cluster's access_config.authentication_mode is
+# "API" (pure IAM-based access, set above), which means the aws-auth
+# ConfigMap is not consulted for authentication at all; only
+# API_AND_CONFIG_MAP or the legacy CONFIG_MAP mode would read it. A managed
+# node group gets an access entry created for it automatically; a
+# self-managed node group has to create one explicitly — that's this
+# resource. type = "EC2_LINUX" is the access-entry type AWS specifically
+# built for self-managed EC2 Linux worker nodes.
+# ---------------------------------------------------------------------------
+
+resource "aws_eks_access_entry" "node" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = aws_iam_role.node.arn
+  type          = "EC2_LINUX"
+
+  tags = var.tags
 }

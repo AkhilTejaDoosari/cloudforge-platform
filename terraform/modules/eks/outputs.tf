@@ -23,3 +23,13 @@ output "node_security_group_id" {
   description = "Security group EKS attaches to worker nodes — used by the RDS module to allow inbound Postgres traffic only from cluster nodes."
   value       = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
 }
+
+output "worker_asg_name" {
+  description = "Self-managed worker node Auto Scaling Group name — useful for `aws autoscaling describe-auto-scaling-groups` / console lookups while debugging node join issues."
+  value       = aws_autoscaling_group.node.name
+}
+
+output "cluster_iam_role_name" {
+  description = "Actual name given to the cluster's IAM role (either the parameterized default or the cluster_iam_role_name override)."
+  value       = aws_iam_role.cluster.name
+}

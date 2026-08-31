@@ -41,10 +41,16 @@ resource "aws_security_group" "db" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
-  for_each = toset(var.allowed_security_group_ids)
+  # count, not for_each: the referenced security group ID (e.g. the EKS
+  # cluster's) isn't known until apply, but the *number* of entries in
+  # var.allowed_security_group_ids is known at plan time regardless — count
+  # only needs the latter. for_each would need to know the actual values
+  # up front to compute its keys, which fails here with "Invalid for_each
+  # argument" (caught by `terraform plan`, not `terraform validate`).
+  count = length(var.allowed_security_group_ids)
 
   security_group_id            = aws_security_group.db.id
-  referenced_security_group_id = each.value
+  referenced_security_group_id = var.allowed_security_group_ids[count.index]
   from_port                    = 5432
   to_port                      = 5432
   ip_protocol                  = "tcp"

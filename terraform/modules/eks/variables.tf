@@ -40,6 +40,22 @@ variable "endpoint_public_access" {
   default     = true
 }
 
+variable "cluster_iam_role_name" {
+  description = <<-EOT
+    Override for the EKS cluster's IAM role name. Defaults to null, which
+    resolves to "$${cluster_name}-cluster" — parameterized by cluster name so
+    multiple clusters can coexist in one AWS account. Set this explicitly
+    only when an external constraint requires one exact literal name — e.g.
+    this project's KodeKloud sandbox lab, whose attached IAM policy grants
+    iam:PassRole to eks.amazonaws.com only for a role named exactly
+    "eksClusterRole" (confirmed via aws iam simulate-principal-policy; see
+    docs/phases.md's Phase 6 notes). A real, non-sandboxed AWS account
+    should leave this null.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "additional_endpoint_public_access_cidrs" {
   description = <<-EOT
     Extra CIDRs (beyond the caller's own current IP, detected automatically)
@@ -51,9 +67,15 @@ variable "additional_endpoint_public_access_cidrs" {
 }
 
 variable "node_instance_types" {
-  description = "EC2 instance types for the managed node group."
+  description = <<-EOT
+    EC2 instance type(s) for worker nodes. Only index [0] is currently used
+    (this module's launch template takes a single instance_type, not a
+    mixed-instances policy) — kept as a list for future extensibility
+    without a breaking change. t3.small is a reasonable small/cheap default
+    for a dev cluster generally, not just for a constrained sandbox.
+  EOT
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t3.small"]
 }
 
 variable "node_desired_size" {
@@ -68,7 +90,7 @@ variable "node_min_size" {
 
 variable "node_max_size" {
   type    = number
-  default = 3
+  default = 2
 }
 
 variable "tags" {

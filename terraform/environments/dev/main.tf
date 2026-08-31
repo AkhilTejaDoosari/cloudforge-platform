@@ -28,18 +28,25 @@ module "ecr" {
 module "eks" {
   source = "../../modules/eks"
 
-  cluster_name        = var.cluster_name
-  vpc_id              = module.vpc.vpc_id
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  node_instance_types = var.node_instance_types
-  node_desired_size   = var.node_desired_size
-  node_min_size       = var.node_min_size
-  node_max_size       = var.node_max_size
-  tags                = local.common_tags
+  cluster_name          = var.cluster_name
+  cluster_iam_role_name = var.cluster_iam_role_name
+  vpc_id                = module.vpc.vpc_id
+  private_subnet_ids    = module.vpc.private_subnet_ids
+  public_subnet_ids     = module.vpc.public_subnet_ids
+  node_instance_types   = var.node_instance_types
+  node_desired_size     = var.node_desired_size
+  node_min_size         = var.node_min_size
+  node_max_size         = var.node_max_size
+  tags                  = local.common_tags
 }
 
+# Disabled for the KodeKloud sandbox lab (rds:CreateDBInstance is denied by
+# its IAM policy — confirmed via aws iam simulate-principal-policy, not by a
+# failed apply). The module itself is untouched and still fully usable in a
+# real account; this is a clean on/off switch, not a permanent deletion or a
+# -target workaround. See docs/phases.md's Phase 6 notes.
 module "rds" {
+  count  = var.enable_rds ? 1 : 0
   source = "../../modules/rds"
 
   identifier                 = var.cluster_name

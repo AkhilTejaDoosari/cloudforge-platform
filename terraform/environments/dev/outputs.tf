@@ -16,12 +16,21 @@ output "ecr_repository_urls" {
 }
 
 output "rds_endpoint" {
-  value = module.rds.db_endpoint
+  description = "null when enable_rds = false."
+  value       = var.enable_rds ? module.rds[0].db_endpoint : null
 }
 
 output "rds_secret_arn" {
-  description = "Fetch the actual DB credentials with: aws secretsmanager get-secret-value --secret-id <this-arn>"
-  value       = module.rds.secret_arn
+  description = "Fetch the actual DB credentials with: aws secretsmanager get-secret-value --secret-id <this-arn>. null when enable_rds = false."
+  value       = var.enable_rds ? module.rds[0].secret_arn : null
+}
+
+output "worker_asg_name" {
+  value = module.eks.worker_asg_name
+}
+
+output "cluster_iam_role_name" {
+  value = module.eks.cluster_iam_role_name
 }
 
 output "github_actions_role_arn" {

@@ -18,6 +18,7 @@ kubeconfig*
 *.tfstate
 *.tfstate.*
 *.tfplan
+*_override.tf
 crash.log
 crash.*.log
 
