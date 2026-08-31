@@ -6,8 +6,8 @@
 | 2 | Dockerize frontend/backend/database, verify locally | ✅ Done |
 | 3 | Deploy locally to Kubernetes, verify health | ✅ Done |
 | 4 | GitHub Actions CI (test, build, Trivy scan, push to ECR) | ✅ Done |
-| 5 | Modular AWS Terraform infrastructure | ⏳ Next |
-| 6 | Provision ECR/EKS, deploy application | Not started |
+| 5 | Modular AWS Terraform infrastructure | ✅ Done (code only — not applied) |
+| 6 | Provision ECR/EKS, deploy application | ⏳ Next |
 | 7 | ArgoCD + GitOps | Not started |
 | 8 | Prometheus, Grafana, Loki | Not started |
 | 9 | Security hardening + operational testing | Not started |
@@ -198,3 +198,101 @@
     execute instead of assuming a locally-validated workflow would work:
     a missing `v` prefix on an action tag, a private-repo Advanced Security
     limitation, and my own mistake repeating the first fix incorrectly.
+
+## Phase 5 Notes
+
+- Scope deliberately stops at `terraform fmt` / `terraform init -backend=false`
+  / `terraform validate` / `tfsec` — no `terraform plan` or `apply`, no AWS
+  credentials needed, nothing touches AWS at all. Provisioning is Phase 6.
+- Five modules under `terraform/modules/`: `vpc`, `eks`, `ecr`, `rds`,
+  `github-oidc`, each with its own `variables.tf`/`outputs.tf`/`versions.tf`,
+  composed by `terraform/environments/dev/main.tf`. A separate
+  `terraform/bootstrap` root creates the S3 state bucket — the classic
+  chicken-and-egg problem (Terraform's own backend can't reference a bucket
+  it hasn't created yet), so this one root legitimately uses local state.
+  Uses Terraform ≥1.10's native S3 state locking (`use_lockfile`), so no
+  DynamoDB lock table is needed.
+- `ecr` module creates `cloudforge/backend` and `cloudforge/frontend` —
+  matching the `REPO: cloudforge/${{ matrix.service }}` naming already
+  hardcoded into the Phase 4 CI workflow.
+- `rds` module never puts the DB password in a Terraform variable or
+  default: `random_password` generates it at apply-time, stored only in
+  Secrets Manager; the module outputs the secret's ARN, never the password.
+  This is the production equivalent of Phase 3's gitignored
+  `secrets.env` + Kustomize `secretGenerator` pattern.
+- `github-oidc` module closes the loop back to Phase 4: its `role_arn`
+  output is exactly what becomes the CI workflow's `AWS_ROLE_ARN` repo
+  variable (Phase 6). Trust policy restricted via `StringLike` on
+  `token.actions.githubusercontent.com:sub` to
+  `repo:<org>/<repo>:ref:refs/heads/main` specifically — a PR from a fork
+  presents a validly-signed GitHub OIDC token but for a different `sub`
+  claim, and cannot assume this role. Handles the real-world gotcha where an
+  AWS account can only have one OIDC provider per issuer URL
+  (`create_oidc_provider` / `existing_oidc_provider_arn` variables let a
+  second project in the same account reuse the first one's provider).
+- **Security scan was run, not skipped, before considering this phase
+  done.** Installed `tfsec` and ran it against the actual composed
+  configuration (`environments/dev`, which pulls in every module via its
+  local `source` references — running it against `terraform/` alone only
+  scanned `bootstrap/`, since tfsec doesn't resolve relative module sources
+  without a root that references them). First pass: 2 CRITICAL, 3 HIGH, 9
+  MEDIUM, 4 LOW. Fixed the CRITICAL/HIGH findings that were genuinely
+  actionable, same policy as the Trivy gate in Phase 4 — fix what's
+  fixable, document what's an accepted tradeoff, never silently drop either:
+  - `aws-eks-no-public-cluster-access` × the CIDR-restriction variant: EKS's
+    public endpoint had no `public_access_cidrs` restriction (defaults to
+    `0.0.0.0/0`). Fixed by adding a `data "http"` lookup of the caller's own
+    current public IP (`https://checkip.amazonaws.com`) and restricting
+    `public_access_cidrs` to that `/32` plus an optional allow-list
+    variable, instead of leaving the endpoint open to the whole internet.
+  - `aws-eks-no-public-cluster-access` (the "any public access at all"
+    variant) is a separate, stricter rule that fires regardless of CIDR
+    restriction — it's flagging the design decision itself
+    (`endpoint_public_access = true`), not a fixable misconfiguration.
+    Disabling it entirely would require a VPN/bastion to reach a personal
+    dev cluster from a laptop, which is the right call for production and
+    the wrong call here. Suppressed with an inline
+    `#tfsec:ignore:aws-eks-no-public-cluster-access` plus a multi-line
+    comment explaining the compensating control and the tradeoff — not
+    silently dropped. (First attempt at the ignore comment put the
+    explanation on the same line as the directive using `-- text`, which
+    tfsec's comment parser didn't recognize; fixed by putting
+    `#tfsec:ignore:...` alone on its own line immediately above the block,
+    confirmed via a re-run showing `ignored: 1` instead of the finding
+    still appearing.)
+  - `aws-eks-enable-secret-encryption`: added a customer-managed KMS key
+    (`aws_kms_key.eks_secrets`, rotation enabled) and wired it into the EKS
+    cluster's `encryption_config` block for `secrets` — Kubernetes Secrets
+    are now envelope-encrypted in etcd with a key this project controls,
+    not just AWS's default one.
+  - `aws-ec2-add-description-to-security-group-rule`-adjacent public-IP
+    finding ×2: `map_public_ip_on_launch` was `true` on both public
+    subnets despite nothing in the design needing it (the NAT Gateway gets
+    its own explicit EIP; nothing else is ever launched into these
+    subnets). Set to `false`.
+  - Result after fixes: **0 CRITICAL, 0 HIGH** (1 explicitly-justified
+    ignore), 9 MEDIUM / 4 LOW left as documented dev-environment tradeoffs
+    (customer-managed KMS on S3/ECR/Secrets Manager too, RDS backup
+    retention period, RDS IAM authentication, RDS deletion protection, RDS
+    Performance Insights, VPC Flow Logs, S3 access logging) — worth
+    revisiting in Phase 9 (security hardening), not blocking here for the
+    same reason the Trivy gate doesn't block on every unfixed base-image
+    CVE: real projects triage by severity and actionability, not by trying
+    to reach zero findings on every tool immediately.
+- Verified, not assumed:
+  - `terraform fmt -recursive -check` — clean, no diffs, across all 6 roots
+    (5 modules + bootstrap + environments/dev).
+  - `terraform init -backend=false` succeeded for both `environments/dev`
+    and `bootstrap` — confirms every module's `source` path resolves and
+    every provider requirement is satisfiable, with zero AWS access.
+  - `terraform validate` succeeded for both roots.
+  - `tfsec` re-run after each fix, not just once at the end, to confirm each
+    specific finding actually disappeared (or, for the one suppression,
+    that it moved from "critical" to "ignored" in the summary counts) rather
+    than assuming the fix was correct.
+  - Reviewed `git status --short` before staging: `.terraform/` directories
+    correctly excluded by the existing root `.gitignore`
+    (`**/.terraform/`); `.terraform.lock.hcl` files correctly included
+    (these should be committed, for reproducible provider version
+    resolution — unlike state files, they contain no secrets or
+    environment-specific data).
