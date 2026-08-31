@@ -7,9 +7,9 @@
 | 3 | Deploy locally to Kubernetes, verify health | ✅ Done |
 | 4 | GitHub Actions CI (test, build, Trivy scan, push to ECR) | ✅ Done |
 | 5 | Modular AWS Terraform infrastructure | ✅ Done (code only — not applied) |
-| 6 | Provision ECR/EKS, deploy application | ⏳ Next |
-| 7 | ArgoCD + GitOps | Not started |
-| 8 | Prometheus, Grafana, Loki | Not started |
+| 6 | Provision ECR/EKS, deploy application | ⚠️ Terraform code + plan validated; apply not run (KodeKloud session friction — see notes) |
+| 7 | ArgoCD + GitOps | ✅ Done (on local kind cluster) |
+| 8 | Prometheus, Grafana, Loki | ⏳ Next |
 | 9 | Security hardening + operational testing | Not started |
 | 10 | Failure testing, rollback, DR docs, final README | Not started |
 
@@ -296,3 +296,69 @@
     (these should be committed, for reproducible provider version
     resolution — unlike state files, they contain no secrets or
     environment-specific data).
+
+## Phase 6 Outcome (AWS)
+
+The EKS module was rewritten for self-managed workers (launch template +
+ASG, `eksClusterRole` naming, EC2_LINUX access entry) after `aws iam
+simulate-principal-policy` (read-only, no resources created) showed the
+KodeKloud sandbox account grants `eks:CreateCluster` and `iam:PassRole` to
+`eks.amazonaws.com` (for that exact role name only) but neither
+`eks:CreateNodegroup` nor `eks:CreateFargateProfile`. `fmt`/`validate`/`tfsec`
+(0 CRITICAL, 0 HIGH) all passed, and `terraform plan` cleanly showed 35 to
+add, 0 to destroy, with `aws_eks_node_group` and `aws_db_instance` both
+absent as intended.
+
+**`terraform apply` was never run.** KodeKloud's STS session tokens expired
+twice during this work (once before the first apply attempt, once again
+after a refresh), and the decision was made to stop AWS work for this
+session rather than keep fighting credential lifecycle friction — no AWS
+resources from Phase 6 were provisioned. The deliverable for this phase is
+the code itself, its security validation, and a clean plan — not a running
+EKS cluster. From here, CloudForge's Kubernetes runtime work (Phases
+7-9) continues on the local `kind` cluster from Phase 3, which has been
+running continuously since then.
+
+## Phase 7 Notes (ArgoCD / GitOps)
+
+- Installed ArgoCD (official `v2.13.2` manifests) into the existing `kind`
+  cluster — all 7 pods (`application-controller`, `applicationset-controller`,
+  `dex-server`, `notifications-controller`, `redis`, `repo-server`, `server`)
+  reached `Running` within ~1 minute.
+- Repo access for this private GitHub repo: a Kubernetes Secret labeled
+  `argocd.argoproj.io/secret-type=repository`, populated via `gh auth token`
+  through command substitution directly in the `kubectl create secret`
+  invocation — the token was never printed to any tool output or written to
+  a file, matching the credential-handling discipline established during
+  the AWS work.
+- **Real compatibility bug found and fixed before ArgoCD could even sync
+  once:** `kubernetes/overlays/dev/kustomization.yaml`'s `secretGenerator`
+  read a gitignored `secrets.env` file — fine for a local `kubectl apply -k`,
+  but ArgoCD's repo-server runs `kustomize build` against the *committed*
+  repo content, where that file never exists by design. Every sync would
+  have failed at the build step. Fixed by removing the `secretGenerator`
+  entirely and provisioning `postgres-credentials` out-of-band instead
+  (`scripts/create-postgres-secret.sh`, idempotent) — the standard GitOps
+  pattern where git holds a secret's *name*, never its generation logic or
+  values. `scripts/k8s-dev-up.sh` updated to match. The already-running
+  cluster's existing secret (created back in Phase 3) needed no changes.
+- `argocd/application.yaml`: points at `kubernetes/overlays/dev` on `main`,
+  `syncPolicy.automated` with `prune: true` and `selfHeal: true` — a manual
+  `kubectl edit` drifting from Git gets reverted automatically, and a
+  resource removed from Git gets deleted from the cluster, not just orphaned.
+- First sync: **Synced / Healthy** immediately, with zero pod restarts —
+  ArgoCD correctly recognized the already-running Phase 3 resources already
+  matched the desired state (a clean "adopt existing resources" outcome,
+  not a redeploy).
+- **Real GitOps loop demonstrated end-to-end, not simulated:** bumped
+  `frontend`'s `replicas: 2 → 3` in `kubernetes/base/frontend-deployment.yaml`,
+  committed, pushed (`ef30a5d`). Forced an immediate ArgoCD refresh
+  (`kubectl patch application ... argocd.argoproj.io/refresh=hard` — avoids
+  waiting out the ~3 min default polling interval) and watched
+  `status.sync.revision` update to exactly `ef30a5d...`, `status.sync.status`
+  go `OutOfSync → Synced` and `status.health.status` go `Healthy →
+  Progressing → Healthy`. Confirmed via `kubectl get pods`: 2 frontend pods
+  before, 3 after (`frontend-658b58c97c-tbcfp`, age 10s), and
+  `kubectl rollout status deployment/frontend` reported success. `/api/status`
+  still returned `database: connected` throughout — no disruption to the
+  running app.
