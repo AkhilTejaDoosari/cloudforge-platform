@@ -1,0 +1,60 @@
+# Values for prometheus-community/kube-prometheus-stack, sized for a local
+# kind cluster (not a real production sizing). This chart bundles Prometheus
+# + Grafana + node-exporter + kube-state-metrics — together these already
+# give real CPU/memory/restart-count/ready-status for every pod in the
+# cluster (frontend, backend, postgres included) via cAdvisor + kubelet
+# scraping, with zero application code changes required. That's the
+# functional baseline this phase asks for; alertmanager is disabled since
+# no alert routing exists yet and it isn't part of what this phase verifies.
+
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 6h # short retention is fine for a disposable local lab cluster
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    # Picks up ServiceMonitors from any namespace, not just this release's —
+    # needed so a future backend /metrics ServiceMonitor (if added) or any
+    # other app-level scrape config works without extra chart config.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+grafana:
+  # No adminPassword set here on purpose: the chart auto-generates a random
+  # one into the "kube-prometheus-stack-grafana" Secret when omitted, the
+  # same "generated + never committed" pattern used for the Postgres
+  # password in Terraform (random_password). Retrieve it with:
+  #   kubectl get secret kube-prometheus-stack-grafana -n monitoring \
+  #     -o jsonpath='{.data.admin-password}' | base64 -d
+  persistence:
+    enabled: false # ephemeral is fine for a lab cluster torn down with the kind cluster itself
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  # Ships with real, functional dashboards out of the box (cluster overview,
+  # node exporter, pod resources) rather than building cosmetic ones from
+  # scratch — these query genuine Prometheus data, not sample/demo data.
+  defaultDashboardsEnabled: true
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi

@@ -9,7 +9,7 @@
 | 5 | Modular AWS Terraform infrastructure | ✅ Done (code only — not applied) |
 | 6 | Provision ECR/EKS, deploy application | ⚠️ Terraform code + plan validated; apply not run (KodeKloud session friction — see notes) |
 | 7 | ArgoCD + GitOps | ✅ Done (on local kind cluster) |
-| 8 | Prometheus, Grafana, Loki | ⏳ Next |
+| 8 | Prometheus, Grafana, Loki | ✅ Done (on local kind cluster) |
 | 9 | Security hardening + operational testing | Not started |
 | 10 | Failure testing, rollback, DR docs, final README | Not started |
 
@@ -362,3 +362,55 @@ running continuously since then.
   `kubectl rollout status deployment/frontend` reported success. `/api/status`
   still returned `database: connected` throughout — no disruption to the
   running app.
+
+## Phase 8 Notes (Observability)
+
+- `kube-prometheus-stack` (Prometheus + Grafana + node-exporter +
+  kube-state-metrics) via Helm, sized for a local kind cluster
+  (`monitoring/kube-prometheus-stack-values.yaml`) — alertmanager disabled
+  (no alert routing exists yet, not part of what this phase verifies),
+  short 6h retention, modest resource requests. `loki-stack` (Loki +
+  Promtail) added for logs — chosen over the newer split `loki` chart for
+  simplicity, "if practical" per the ask; noted as a known upstream
+  deprecation to revisit if this project continues past the portfolio
+  stage.
+- **No hardcoded Grafana password**, on reflection: the chart lets you set
+  one directly, but doing so would have broken this project's otherwise
+  consistent "generate secrets, never hardcode them" discipline (Postgres's
+  password is `random_password` in Terraform, k8s secrets are gitignored
+  env files). Left `adminPassword` unset instead — the chart auto-generates
+  a random one into a Secret, same pattern.
+- **Real bug found and fixed, not glossed over:** after wiring Loki into
+  the existing Grafana via the sidecar-discovered-ConfigMap pattern,
+  Grafana's provisioning failed outright with `"Only one datasource per
+  organization can be marked as default"` — the `loki-stack` chart's
+  auto-generated datasource ConfigMap sets `isDefault: true` by default,
+  conflicting with Prometheus's own default. Confirmed via
+  `kubectl get configmap loki-loki-stack -o jsonpath='{.data}'`, patched to
+  `isDefault: false`, restarted the Grafana pod, and re-verified via
+  Grafana's own `/api/datasources` that both datasources loaded correctly
+  this time.
+- Verified this is genuinely working, not just "pods are Running":
+  - `Prometheus /api/v1/targets`: 16 active targets. The 4 `down`
+    (`kube-controller-manager`, `kube-etcd`, `kube-proxy`,
+    `kube-scheduler`) are a known kind limitation — those control-plane
+    components bind to localhost-only inside the kind node container and
+    aren't reachable via ServiceMonitor — not a misconfiguration here.
+    `kubelet`, `kube-state-metrics`, and `node-exporter` (everything this
+    phase's dashboards actually depend on) are all up.
+  - Queried real, live data directly from Prometheus: per-pod CPU usage in
+    `cloudforge-dev` (including `frontend-658b58c97c-tbcfp`, the exact pod
+    created by the Phase 7 GitOps demo), and `kube_deployment_status_replicas_available`
+    correctly showing `backend: 2, frontend: 3, postgres: 1` — matching the
+    cluster's actual live state.
+  - Queried real backend log lines out of Loki
+    (`{namespace="cloudforge-dev", pod=~"backend.*"}`) — actual uvicorn
+    access-log lines from the backend's own `/health` probe traffic, not
+    sample data.
+  - Queried Grafana's own API (not just the backends directly): both
+    datasources registered with correct `isDefault` flags, a query proxied
+    *through* Grafana to Prometheus returned `"status": "success"`, and
+    `/api/search?type=dash-db` listed 28 real shipped dashboards (including
+    `Kubernetes / Compute Resources / Namespace (Pods)`, which directly
+    covers `cloudforge-dev`'s workloads) — proving Grafana can actually
+    query both backends end-to-end, not just that the pods exist.
