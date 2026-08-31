@@ -1,6 +1,6 @@
 # CloudForge — Production Kubernetes Platform on AWS
 
-> **Status: Phase 1 of 10 complete.** This README grows with each phase; sections
+> **Status: Phase 2 of 10 complete.** This README grows with each phase; sections
 > for Terraform, Kubernetes, CI/CD, GitOps, observability, and security will be
 > filled in as those phases land. See [docs/phases.md](docs/phases.md) for the
 > full roadmap and phase-by-phase log.
@@ -48,15 +48,19 @@ cloudforge-platform/
 └── scripts/                   # Helper scripts
 ```
 
-## Application Architecture (Phase 1)
+## Application Architecture (Phase 2)
 
 ```mermaid
 flowchart LR
-    User((User Browser)) -->|HTTP| FE[Static Frontend<br/>HTML/CSS/JS]
-    FE -->|fetch /api/status| BE[FastAPI Backend]
-    BE -->|SELECT 1| DB[(PostgreSQL)]
-    BE -->|/health| K8s[Liveness Probe<br/>future: Phase 3]
+    User((User Browser)) -->|":3000"| FE["Frontend container<br/>nginx-unprivileged, non-root<br/>listens :8080"]
+    FE -->|"proxy_pass /api/*, /health"| BE["Backend container<br/>FastAPI, non-root<br/>listens :8000"]
+    BE -->|"SELECT 1 (pool_pre_ping)"| DB[("Postgres container<br/>:5432, named volume")]
 ```
+
+All three containers run on one Docker bridge network (`cloudforge`), each
+with a real `HEALTHCHECK`, and `depends_on: condition: service_healthy` so the
+backend doesn't start accepting the assumption that Postgres is ready until
+`pg_isready` actually passes.
 
 - `GET /health` — pure liveness signal, no dependencies. Backing endpoint for
   Kubernetes liveness probes later.
@@ -64,29 +68,46 @@ flowchart LR
   connectivity. Backing endpoint for Kubernetes readiness probes and what the
   frontend displays.
 
-## Running Locally (Phase 1 — no Docker yet)
+## Running Locally
 
-**Backend:**
+### Option A — Docker Compose (Phase 2, recommended)
+
+```bash
+cp .env.example .env      # local-dev-only DB credentials, gitignored
+docker compose up -d --build
+docker compose ps         # wait until all three services show (healthy)
+```
+
+- Frontend: http://localhost:3000 — nginx serves the static files and
+  reverse-proxies `/health` and `/api/*` to the backend, so the browser only
+  ever talks to one origin (no CORS needed).
+- Backend (direct, for debugging/Swagger UI): http://localhost:8000/docs
+- Tear down: `docker compose down` (add `-v` to also delete the Postgres
+  volume and start with a clean database).
+
+**Verified behavior:** with all three containers up, `database` shows
+`connected`. Stopping just Postgres (`docker compose stop postgres`) makes
+`/api/status` correctly report `disconnected` while `/health` keeps returning
+`ok` — the backend doesn't crash or need a restart, and self-heals back to
+`connected` once Postgres is started again. This is `pool_pre_ping` doing its
+job, and it's the same resilience story Kubernetes readiness probes will rely
+on in Phase 3.
+
+### Option B — bare processes (Phase 1 style, no Docker)
+
 ```bash
 cd app/backend
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
-
-**Frontend:**
 ```bash
 cd app/frontend
 python3 -m http.server 3000
 ```
 
-Open http://localhost:3000 — it will call the backend at `http://localhost:8000`
-(configured in `app/frontend/config.js`) and display live backend/database status.
-
-Since PostgreSQL isn't running yet in Phase 1, `database` will correctly show
-`disconnected` — this is expected and demonstrates the graceful-degradation
-design that will matter once we add real health/readiness probes in Kubernetes.
+Without Postgres running, `/api/status` correctly reports `database: disconnected`
+rather than crashing — the graceful-degradation design in action.
 
 ## Tests
 
