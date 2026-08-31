@@ -173,4 +173,19 @@
     ref actually resolves on GitHub. Fixed by pinning to `v0.36.0` (current
     latest) and confirmed via `gh api
     repos/aquasecurity/trivy-action/git/refs/tags/v0.36.0` before pushing
-    again, along with every other action pin in the file.
+    again, along with every other action pin in the file. (Caught my own
+    mistake on the first attempted fix too — the replacement still dropped
+    the `v` prefix; verified with `grep` against the actual file content on
+    the second attempt, not just the commit message.)
+  - **Second real bug, second run:** both jobs got further (image built,
+    Trivy ran) but the "Upload Trivy results to Security tab" step failed
+    with `Resource not accessible by integration`. Root cause: GitHub
+    Advanced Security (required for code scanning / SARIF upload) is free on
+    public repos but not on private ones without a paid plan — and this is a
+    private repo. Since that step was explicitly meant to be non-blocking,
+    its failure shouldn't have stopped the rest of the job; it did because a
+    failed step halts subsequent steps by default. Fixed with
+    `continue-on-error: true` on that step — the merge-gate scan and (once
+    Phase 5/6 lands) the ECR push now run regardless. If this repo is ever
+    made public, the upload starts succeeding with no workflow changes
+    needed.
