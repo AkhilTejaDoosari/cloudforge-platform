@@ -163,3 +163,14 @@
     images and confirmed `exit code: 0` (would pass) for both.
   - Pushed to a real GitHub repo and watched the Actions run execute for
     real (see the run link in the phase 4 commit / PR, or `gh run list`).
+  - **Bug found on the first real run, fixed immediately:** both
+    `build-scan-push` jobs failed at "Set up job" with `Unable to resolve
+    action aquasecurity/trivy-action@0.28.0, unable to find version
+    0.28.0` — the action's git tags are `v`-prefixed (`v0.28.0`), and the
+    workflow referenced `0.28.0` without the `v`. `actionlint` had passed
+    cleanly on this file — it validates workflow schema/expression syntax
+    and shellchecks `run:` blocks, but does not verify that a pinned action
+    ref actually resolves on GitHub. Fixed by pinning to `v0.36.0` (current
+    latest) and confirmed via `gh api
+    repos/aquasecurity/trivy-action/git/refs/tags/v0.36.0` before pushing
+    again, along with every other action pin in the file.
