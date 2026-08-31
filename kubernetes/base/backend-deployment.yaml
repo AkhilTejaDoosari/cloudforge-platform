@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: cloudforge-backend:local
+          image: cloudforge-backend:broken-deliberate-test
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
