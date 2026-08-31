@@ -1,6 +1,6 @@
 # CloudForge — Production Kubernetes Platform on AWS
 
-> **Status: Phase 3 of 10 complete.** This README grows with each phase; sections
+> **Status: Phase 4 of 10 complete.** This README grows with each phase; sections
 > for Terraform, Kubernetes, CI/CD, GitOps, observability, and security will be
 > filled in as those phases land. See [docs/phases.md](docs/phases.md) for the
 > full roadmap and phase-by-phase log.
@@ -23,7 +23,7 @@ platform something real to build, deploy, and operate.
 | Containers | Docker (multi-stage) | Reproducible builds, small images |
 | Orchestration | Kubernetes (EKS) | Industry-standard container orchestration |
 | IaC | Terraform | Modular, versioned, reviewable infrastructure |
-| CI | GitHub Actions | Test → build → scan (Trivy) → publish to ECR |
+| CI | GitHub Actions | Test → build → scan (Trivy) → publish to ECR (OIDC, no static AWS keys) |
 | CD | ArgoCD (GitOps) | Declarative, auditable, git-as-source-of-truth deployments |
 | Observability | Prometheus, Grafana, Loki | Metrics + dashboards + logs |
 | Cloud | AWS (VPC, EKS, ECR, RDS, IAM, ALB, CloudWatch) | Real-world production target |
@@ -166,6 +166,34 @@ curl -H "Host: cloudforge.local" http://localhost/api/status
 See [docs/phases.md](docs/phases.md#phase-3-notes) for the Kubernetes
 architecture, the readiness-probe design decision, and the failure-injection
 test that validates it.
+
+## CI Pipeline (Phase 4)
+
+```mermaid
+flowchart LR
+    Push["push / PR to main"] --> Test["test job<br/>pytest"]
+    Test --> Build["build-scan-push (matrix)<br/>backend, frontend"]
+    Build --> Trivy1["Trivy: full report<br/>HIGH+CRITICAL, never fails<br/>→ GitHub Security tab"]
+    Build --> Trivy2["Trivy: merge gate<br/>CRITICAL + fix available<br/>fails build if found"]
+    Trivy2 -->|"main branch only,<br/>if AWS_ROLE_ARN set"| OIDC["AWS OIDC<br/>(no static keys)"]
+    OIDC --> ECR["Amazon ECR"]
+```
+
+**Trivy policy, chosen from real scan results, not guessed:** the merge gate
+fails only on `CRITICAL` vulnerabilities with a fix available
+(`--ignore-unfixed`). A separate, non-blocking scan reports everything
+(`HIGH`+`CRITICAL`, fixed or not) to GitHub's Security tab for visibility.
+Gating on every unfixed base-image CVE would make the pipeline permanently
+red for issues nobody can act on yet — that trains people to ignore red
+builds, which defeats the point. See
+[docs/phases.md](docs/phases.md#phase-4-notes) for the actual vulnerabilities
+found and fixed while building this (a real `starlette` CVE fixed via a
+`fastapi` version bump, and a real `openssl` CRITICAL in the frontend's
+Alpine base fixed by patching OS packages at build time).
+
+**ECR publish is gated behind `vars.AWS_ROLE_ARN`, not always attempted** —
+ECR doesn't exist until Phase 5/6 provisions it via Terraform, so this step
+skips gracefully until then instead of leaving the pipeline permanently red.
 
 ## Tests
 

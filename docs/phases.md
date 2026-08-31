@@ -5,8 +5,8 @@
 | 1 | Repository structure + simple application | ✅ Done |
 | 2 | Dockerize frontend/backend/database, verify locally | ✅ Done |
 | 3 | Deploy locally to Kubernetes, verify health | ✅ Done |
-| 4 | GitHub Actions CI (test, build, Trivy scan, push to ECR) | ⏳ Next |
-| 5 | Modular AWS Terraform infrastructure | Not started |
+| 4 | GitHub Actions CI (test, build, Trivy scan, push to ECR) | ✅ Done |
+| 5 | Modular AWS Terraform infrastructure | ⏳ Next |
 | 6 | Provision ECR/EKS, deploy application | Not started |
 | 7 | ArgoCD + GitOps | Not started |
 | 8 | Prometheus, Grafana, Loki | Not started |
@@ -120,3 +120,46 @@
   - `scripts/k8s-dev-up.sh` re-run end-to-end against the already-running
     cluster to confirm it's genuinely idempotent (all resources reported
     `unchanged`, no errors).
+
+## Phase 4 Notes
+
+- Two-job pipeline: `test` (pytest) → `build-scan-push` (matrix over
+  backend/frontend). Build failures fail fast before any image work happens.
+- **Trivy policy was derived from actually scanning the images, not
+  guessed.** Ran `trivy image` locally against both Phase 2/3 images first:
+  - Backend: found `starlette` CVE-2024-47874 (DoS), pinned in by
+    `fastapi==0.115.0`. Fixed by bumping to `fastapi==0.128.8` (→ starlette
+    0.52.1), re-ran `pytest` (still 3/3 passing) and re-scanned to confirm.
+  - Frontend: found 2 CRITICAL (`libcrypto3`/`libssl3`, OpenSSL heap
+    overflow) in the `nginxinc/nginx-unprivileged:1.27-alpine` base image.
+    Fixed by adding `RUN apk upgrade --no-cache` to the Dockerfile
+    (temporarily switching to `USER root` for that one layer, then back to
+    the non-root uid 101) — patches OS packages at build time instead of
+    trusting the base tag's freshness. Confirmed still non-root afterward
+    (`docker inspect --format '{{.Config.User}}'` → `101`) and confirmed the
+    full compose stack still works end-to-end post-patch.
+  - What's left after those fixes: only base-OS `HIGH` findings (openssl,
+    libxml2, musl, etc. — one version behind their point release) and CVEs
+    with **no fix available yet** (a base-OS `perl-base` CRITICAL in the
+    Debian image, status `affected` not `fixed`). This is why the CI gate
+    specifically uses `--ignore-unfixed`: failing the merge gate on a CVE
+    nobody can currently patch just trains people to ignore red builds.
+  - Final gate policy encoded in CI: `--severity CRITICAL --ignore-unfixed
+    --exit-code 1` (blocks the merge). A separate non-blocking scan
+    (`--severity HIGH,CRITICAL`, no ignore-unfixed, `exit-code 0`) uploads a
+    SARIF report to GitHub's Security tab so nothing is hidden, it just
+    doesn't block anything.
+- ECR push step is gated on `github.ref == 'refs/heads/main' &&
+  vars.AWS_ROLE_ARN != ''` — ECR and its OIDC trust role don't exist until
+  Phase 5/6 provisions them via Terraform. Using a repo **variable** (not a
+  secret) for the role ARN is deliberate: assuming the role still requires
+  proving identity via GitHub's OIDC token exchange, so the ARN string alone
+  isn't sensitive.
+- Verified, not assumed:
+  - `actionlint .github/workflows/ci.yml` — clean (schema, expression
+    syntax, and embedded shell all validated).
+  - Reproduced the exact CI gate command locally (`trivy image --severity
+    CRITICAL --ignore-unfixed --exit-code 1`) against both freshly-rebuilt
+    images and confirmed `exit code: 0` (would pass) for both.
+  - Pushed to a real GitHub repo and watched the Actions run execute for
+    real (see the run link in the phase 4 commit / PR, or `gh run list`).

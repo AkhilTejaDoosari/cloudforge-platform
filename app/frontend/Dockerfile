@@ -4,6 +4,15 @@
 # and listens on port 8080 instead of 80, which requires no capability grant.
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 
+# The base image defaults to a non-root user (uid 101), so package management
+# needs an explicit root step — then we drop back to non-root before serving.
+# Patches OS packages at build time rather than trusting the base tag's
+# freshness (Trivy caught a fixed CRITICAL openssl CVE here in the untouched
+# image — this is what actually resolves it).
+USER root
+RUN apk upgrade --no-cache
+USER 101
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html style.css app.js /usr/share/nginx/html/
 # Overwrite the local-dev config.js with the Docker-networking variant.

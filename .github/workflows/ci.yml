@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege default: only the job that actually needs to talk to AWS
+# elevates id-token permission (for OIDC), and only when it runs.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: app/backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: app/backend
+        run: pytest -v
+
+  build-scan-push:
+    name: Build, scan & publish (${{ matrix.service }})
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for AWS OIDC — no long-lived AWS keys stored in GitHub
+      security-events: write # required to upload Trivy's SARIF report to the Security tab
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: app/${{ matrix.service }}
+          tags: cloudforge-${{ matrix.service }}:${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      # Full report (HIGH+CRITICAL, including CVEs with no fix yet) is always
+      # generated and uploaded to the Security tab for visibility — nothing
+      # is hidden. It never fails the build on its own.
+      - name: Trivy scan (report, non-blocking)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: cloudforge-${{ matrix.service }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Upload Trivy results to Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      # The actual merge gate: fails only on CRITICAL vulnerabilities that
+      # have a fix available. Deliberately excludes vulnerabilities with no
+      # upstream fix yet (--ignore-unfixed) — failing CI on something nobody
+      # can act on just trains everyone to ignore red builds. See
+      # docs/phases.md#phase-4-notes for how this threshold was chosen by
+      # actually scanning these images, not picked arbitrarily.
+      - name: Trivy scan (gate on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: cloudforge-${{ matrix.service }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # ECR doesn't exist until Phase 5/6 provisions it via Terraform, and
+      # the OIDC trust role doesn't exist until then either. This step skips
+      # gracefully (rather than failing every run) until AWS_ROLE_ARN is set
+      # as a repo variable. It's a variable, not a secret: assuming this role
+      # still requires proving identity via GitHub's OIDC token, so the ARN
+      # itself carries no exploitable value.
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push to ECR
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPO: cloudforge/${{ matrix.service }}
+        run: |
+          docker tag cloudforge-${{ matrix.service }}:${{ github.sha }} "$REGISTRY/$REPO:${{ github.sha }}"
+          docker tag cloudforge-${{ matrix.service }}:${{ github.sha }} "$REGISTRY/$REPO:latest"
+          docker push "$REGISTRY/$REPO:${{ github.sha }}"
+          docker push "$REGISTRY/$REPO:latest"
