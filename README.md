@@ -195,6 +195,14 @@ Alpine base fixed by patching OS packages at build time).
 ECR doesn't exist until Phase 5/6 provisions it via Terraform, so this step
 skips gracefully until then instead of leaving the pipeline permanently red.
 
+**Live and verified, not just locally validated:** pushed to
+[github.com/AkhilTejaDoosari/cloudforge-platform](https://github.com/AkhilTejaDoosari/cloudforge-platform)
+(private) and watched real Actions runs execute. Found and fixed three real
+bugs this way that local `actionlint` validation didn't catch — a missing `v`
+prefix on a pinned action tag (actionlint checks syntax, not whether a ref
+resolves on GitHub) and a private-repo GitHub Advanced Security limitation on
+SARIF upload. See [docs/phases.md](docs/phases.md#phase-4-notes) for details.
+
 ## Tests
 
 ```bash

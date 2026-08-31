@@ -189,3 +189,12 @@
     Phase 5/6 lands) the ECR push now run regardless. If this repo is ever
     made public, the upload starts succeeding with no workflow changes
     needed.
+  - **Fourth run: fully green.** `test` → both `build-scan-push` (backend,
+    frontend) all passed — image build, both Trivy scans (including the real
+    CRITICAL+ignore-unfixed gate, on GitHub's runner, not just locally), and
+    the ECR steps correctly *skipped* (not failed) since `AWS_ROLE_ARN` isn't
+    set. Repo: https://github.com/AkhilTejaDoosari/cloudforge-platform
+    (private). Three real bugs found and fixed by actually watching runs
+    execute instead of assuming a locally-validated workflow would work:
+    a missing `v` prefix on an action tag, a private-repo Advanced Security
+    limitation, and my own mistake repeating the first fix incorrectly.
