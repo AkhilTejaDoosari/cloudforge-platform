@@ -37,10 +37,8 @@ docker build -t cloudforge-frontend:local "$REPO_ROOT/app/frontend"
 kind load docker-image cloudforge-backend:local --name "$CLUSTER_NAME"
 kind load docker-image cloudforge-frontend:local --name "$CLUSTER_NAME"
 
-if [ ! -f "$REPO_ROOT/kubernetes/overlays/dev/secrets.env" ]; then
-  echo "==> No secrets.env found, copying from example (dev-only default credentials)"
-  cp "$REPO_ROOT/kubernetes/overlays/dev/secrets.env.example" "$REPO_ROOT/kubernetes/overlays/dev/secrets.env"
-fi
+echo "==> Creating postgres-credentials Secret (out-of-band, not via kustomize)"
+"$REPO_ROOT/scripts/create-postgres-secret.sh"
 
 echo "==> Applying kubernetes/overlays/dev"
 kubectl apply -k "$REPO_ROOT/kubernetes/overlays/dev"

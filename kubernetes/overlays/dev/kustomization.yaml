@@ -7,17 +7,14 @@ resources:
   - namespace.yaml
   - ../../base
 
-# Generates a real Secret from a gitignored local file — the values never
-# live in a committed manifest. See secrets.env.example for the template.
-secretGenerator:
-  - name: postgres-credentials
-    envs:
-      - secrets.env
-
-# Without this, Kustomize appends a content hash to the generated Secret's
-# name (e.g. postgres-credentials-8f92kt), which would break the
-# secretKeyRef/envFrom name references in the base manifests unless every
-# other manifest referencing it were also generated through Kustomize.
-# Disabling it keeps the name stable and simple for this project's scale.
-generatorOptions:
-  disableNameSuffixHash: true
+# postgres-credentials is intentionally NOT generated here (no
+# secretGenerator). It used to be, reading a gitignored secrets.env — that
+# worked for a plain `kubectl apply -k`, but breaks under ArgoCD (Phase 7):
+# the repo-server runs `kustomize build` against the *committed* repo
+# content, where secrets.env never exists by design, so the build would
+# fail before ArgoCD ever got to apply anything. The base Deployments still
+# reference the Secret by name; it's provisioned out-of-band instead —
+# scripts/create-postgres-secret.sh for local kind, and (in a real AWS
+# environment) External Secrets Operator pulling from Secrets Manager in
+# Phase 9. This is a standard GitOps pattern: git holds the reference to a
+# secret's name, never its generation logic or values.

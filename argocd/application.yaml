@@ -1,0 +1,33 @@
+# ArgoCD Application: the GitOps entry point for CloudForge. ArgoCD
+# continuously compares this repo's kubernetes/overlays/dev against the live
+# cluster state and reconciles any drift — this is what makes "git push" the
+# actual deployment mechanism instead of a human running kubectl apply.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudforge
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/AkhilTejaDoosari/cloudforge-platform
+    targetRevision: main
+    path: kubernetes/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cloudforge-dev
+
+  syncPolicy:
+    automated:
+      prune: true # remove resources deleted from Git
+      selfHeal: true # revert manual kubectl edits that drift from Git
+    syncOptions:
+      - CreateNamespace=false # namespace.yaml in the overlay already manages this
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m
