@@ -1,6 +1,6 @@
 # CloudForge — Production Kubernetes Platform on AWS
 
-> **Status: Phase 2 of 10 complete.** This README grows with each phase; sections
+> **Status: Phase 3 of 10 complete.** This README grows with each phase; sections
 > for Terraform, Kubernetes, CI/CD, GitOps, observability, and security will be
 > filled in as those phases land. See [docs/phases.md](docs/phases.md) for the
 > full roadmap and phase-by-phase log.
@@ -39,8 +39,9 @@ cloudforge-platform/
 │   ├── modules/         # vpc, eks, ecr, rds (Phase 5)
 │   └── environments/dev # dev environment composition (Phase 5)
 ├── kubernetes/
-│   ├── base/             # Kustomize base manifests (Phase 3)
-│   └── overlays/dev/     # dev environment overlay (Phase 3)
+│   ├── base/             # Kustomize base manifests: Deployments, Services,
+│   │                     #   ConfigMap, HPA, Ingress, PVC
+│   └── overlays/dev/     # namespace + secretGenerator for local kind use
 ├── argocd/                # ArgoCD Application definitions (Phase 7)
 ├── monitoring/             # Prometheus/Grafana/Loki config (Phase 8)
 ├── .github/workflows/       # CI pipelines (Phase 4)
@@ -61,6 +62,49 @@ All three containers run on one Docker bridge network (`cloudforge`), each
 with a real `HEALTHCHECK`, and `depends_on: condition: service_healthy` so the
 backend doesn't start accepting the assumption that Postgres is ready until
 `pg_isready` actually passes.
+
+## Kubernetes Architecture (Phase 3)
+
+```mermaid
+flowchart LR
+    User((Browser)) -->|"Host: cloudforge.local"| Ing["Ingress<br/>(ingress-nginx)"]
+    Ing --> FE_SVC["Service: frontend<br/>:8080"]
+    FE_SVC --> FE1["Pod: frontend"]
+    FE_SVC --> FE2["Pod: frontend"]
+    FE1 & FE2 -->|"proxy_pass /api,/health"| BE_SVC["Service: backend<br/>:8000"]
+    BE_SVC --> BE1["Pod: backend"]
+    BE_SVC --> BE2["Pod: backend"]
+    HPA["HPA<br/>min 2 / max 4<br/>target 70% CPU"] -.scales.-> BE_SVC
+    BE1 & BE2 --> PG_SVC["Service: postgres<br/>:5432"]
+    PG_SVC --> PG["Pod: postgres<br/>(PVC-backed)"]
+```
+
+Same three-tier shape as Phase 2 — Kubernetes replaces Docker Compose's
+bridge network + healthchecks with Services + probes, and adds an Ingress at
+the edge and an HPA on the backend. The frontend's nginx config from Phase 2
+needed **zero changes**: Kubernetes Service DNS resolves the short name
+`backend` the same way Compose's network DNS did.
+
+**Deliberate design decision — readiness probes target `/health`, not
+`/api/status`:** if the backend's readiness probe checked database
+connectivity, a single Postgres blip would fail *every* backend pod's
+readiness at once and pull all of them from the Service's endpoints
+simultaneously — turning one dependency hiccup into a total outage. Instead,
+both liveness and readiness use `/health` (pure process check), so the
+backend keeps serving traffic and reporting its real DB state via
+`/api/status` even while Postgres is down. **Verified**, not just asserted:
+scaled Postgres to 0 replicas mid-test and confirmed via
+`kubectl get endpoints backend` that both backend pods stayed in the
+Service's endpoint list the entire time, while live `curl` traffic through
+the Ingress kept flowing (`/health: ok`, `/api/status: disconnected`), then
+scaled Postgres back up and confirmed self-heal with no backend restart.
+
+Secrets are never committed: `kubernetes/overlays/dev/secrets.env` (gitignored)
+is read by Kustomize's `secretGenerator` at apply-time to produce the
+`postgres-credentials` Secret — only `secrets.env.example` is in git. In
+Phase 6+, this local Postgres Deployment is replaced by RDS for the AWS
+environment; the in-cluster version exists purely so this phase could
+exercise Deployments/Services/PVCs/probes without needing AWS yet.
 
 - `GET /health` — pure liveness signal, no dependencies. Backing endpoint for
   Kubernetes liveness probes later.
@@ -108,6 +152,20 @@ python3 -m http.server 3000
 
 Without Postgres running, `/api/status` correctly reports `database: disconnected`
 rather than crashing — the graceful-degradation design in action.
+
+### Option C — local Kubernetes (Phase 3, kind)
+
+```bash
+brew install kind        # one-time
+./scripts/k8s-dev-up.sh  # creates the cluster, installs ingress-nginx +
+                          # metrics-server, builds/loads images, applies manifests
+curl -H "Host: cloudforge.local" http://localhost/api/status
+./scripts/k8s-dev-down.sh  # full teardown, fully reversible, all-local
+```
+
+See [docs/phases.md](docs/phases.md#phase-3-notes) for the Kubernetes
+architecture, the readiness-probe design decision, and the failure-injection
+test that validates it.
 
 ## Tests
 

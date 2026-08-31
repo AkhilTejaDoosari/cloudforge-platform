@@ -1,0 +1,22 @@
+# Routes everything to the frontend Service only. The frontend's own nginx
+# config (from Phase 2) already reverse-proxies /api/* and /health to the
+# backend Service, so the Ingress doesn't need path-based routing rules for
+# the backend — that separation of concerns lives inside the frontend image
+# and didn't need to change moving from Docker Compose to Kubernetes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cloudforge
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: cloudforge.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 8080

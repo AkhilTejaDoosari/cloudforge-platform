@@ -6,6 +6,8 @@
 .env
 .env.*
 !.env.example
+secrets.env
+!secrets.env.example
 **/secrets/
 kubeconfig*
 *.tfvars

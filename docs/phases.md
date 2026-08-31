@@ -4,8 +4,8 @@
 |---|---|---|
 | 1 | Repository structure + simple application | ✅ Done |
 | 2 | Dockerize frontend/backend/database, verify locally | ✅ Done |
-| 3 | Deploy locally to Kubernetes, verify health | ⏳ Next |
-| 4 | GitHub Actions CI (test, build, Trivy scan, push to ECR) | Not started |
+| 3 | Deploy locally to Kubernetes, verify health | ✅ Done |
+| 4 | GitHub Actions CI (test, build, Trivy scan, push to ECR) | ⏳ Next |
 | 5 | Modular AWS Terraform infrastructure | Not started |
 | 6 | Provision ECR/EKS, deploy application | Not started |
 | 7 | ArgoCD + GitOps | Not started |
@@ -63,3 +63,60 @@
   degradation by stopping Postgres mid-run (`/health` stayed `ok`,
   `/api/status` correctly flipped to `disconnected`) and confirmed self-heal
   on restart with no backend restart needed.
+
+## Phase 3 Notes
+
+- Local cluster: `kind` (Kubernetes-in-Docker), created via
+  `scripts/kind-config.yaml` with host ports 80/443 mapped in for
+  ingress-nginx and the control-plane node labeled `ingress-ready=true`.
+  Chosen over enabling Docker Desktop's built-in Kubernetes because it's
+  fully scriptable and doesn't require touching the pre-existing `default`
+  kubeconfig context from another project.
+- Kustomize `base/` + `overlays/dev/`: base holds environment-agnostic
+  Deployments/Services/ConfigMap/HPA/Ingress/PVC; the dev overlay sets the
+  `cloudforge-dev` namespace and generates the `postgres-credentials` Secret
+  via `secretGenerator` from a gitignored `secrets.env` (only
+  `secrets.env.example` is committed) — no base64 credentials ever land in a
+  committed manifest.
+- **Readiness probes target `/health`, not `/api/status`, deliberately.**
+  Checking DB connectivity in readiness would fail every backend pod at once
+  on a single Postgres blip, pulling the whole backend out of the Service —
+  turning a dependency hiccup into a total outage. `/health` (no dependency)
+  backs both liveness and readiness; `/api/status` stays available for the
+  frontend UI without ever gating traffic.
+- HPA on the backend only (min 2 / max 4, 70% CPU target) — it's the
+  stateless, scalable tier. Requires `metrics-server`, which kind doesn't
+  ship; installed manually and patched with `--kubelet-insecure-tls` since
+  kind's kubelet certs aren't signed for metrics-server's default TLS
+  verification.
+- The frontend's nginx `proxy_pass http://backend:8000` from Phase 2 required
+  **no changes** — Kubernetes Service DNS resolves the short name `backend`
+  within a namespace exactly like Compose's network DNS did.
+- Ingress routes only to the frontend Service; the frontend's own nginx
+  config already handles `/api/*` and `/health` proxying internally, so no
+  path-based routing rules were needed at the Ingress layer.
+- `postgres-data` PVC uses `subPath: postgres` on the mount (not the PVC root
+  directly) — a known gotcha where some volume provisioners leave a
+  `lost+found` directory that makes Postgres refuse to initialize in a
+  "non-empty" data directory.
+- Verified, not assumed:
+  - `kubectl get pods -n cloudforge-dev` — all 5 pods `Running`/`Ready`.
+  - `kubectl exec` into the backend confirmed `DATABASE_URL` resolved
+    correctly via Kubernetes' `$(VAR)` env expansion, and `/api/status`
+    reported `database: connected`.
+  - Full path tested for real: `curl -H "Host: cloudforge.local"
+    http://localhost/api/status` → Ingress → frontend Service → frontend pod
+    → backend Service → backend pod → Postgres, all the way through.
+  - **Failure injection:** `kubectl scale deployment postgres --replicas=0`
+    mid-run, then confirmed via `kubectl get endpoints backend` that both
+    backend pods stayed in the Service's endpoint list the whole time (proving
+    the readiness-probe design decision), while live Ingress traffic kept
+    returning `/health: ok` and `/api/status: disconnected`. Scaled Postgres
+    back to 1 and confirmed `/api/status` self-healed to `connected` with
+    zero backend restarts.
+  - `kubectl top pods` and `kubectl get hpa` confirmed metrics-server is
+    reporting real per-pod CPU/memory and the HPA is computing utilization
+    against it (`cpu: 4%/70%` at idle).
+  - `scripts/k8s-dev-up.sh` re-run end-to-end against the already-running
+    cluster to confirm it's genuinely idempotent (all resources reported
+    `unchanged`, no errors).
