@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CloudForge</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>CloudForge</h1>
+    <p class="subtitle">Production Kubernetes Platform on AWS</p>
+
+    <section class="card">
+      <h2>Backend Status</h2>
+      <dl id="status-list">
+        <dt>Backend</dt>
+        <dd id="backend-status">checking…</dd>
+        <dt>Database</dt>
+        <dd id="database-status">checking…</dd>
+      </dl>
+      <button id="refresh">Refresh</button>
+    </section>
+  </main>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

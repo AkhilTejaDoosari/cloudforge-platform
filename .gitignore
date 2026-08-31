@@ -1,0 +1,39 @@
+# --- Secrets / credentials ---
+*.pem
+*.key
+*.crt
+*.p12
+.env
+.env.*
+!.env.example
+**/secrets/
+kubeconfig*
+*.tfvars
+!*.tfvars.example
+
+# --- Terraform ---
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# --- Node (frontend tooling, if ever added) ---
+node_modules/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Docker ---
+*.log
