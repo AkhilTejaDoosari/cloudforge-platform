@@ -1,0 +1,36 @@
+=== CloudForge — ArgoCD GitOps Validation Evidence ===
+Generated: 2026-09-01 00:52:43 UTC
+
+--- argocd pods ---
+NAME                                               READY   STATUS    RESTARTS   AGE
+argocd-application-controller-0                    1/1     Running   0          3h22m
+argocd-applicationset-controller-cb5b4cff8-lmb5h   1/1     Running   0          3h22m
+argocd-dex-server-5c88cd987-w4prp                  1/1     Running   0          3h22m
+argocd-notifications-controller-794b8c7979-pw959   1/1     Running   0          3h22m
+argocd-redis-7745d5664-z9t69                       1/1     Running   0          3h22m
+argocd-repo-server-f74768b-rndrl                   1/1     Running   0          3h22m
+argocd-server-5cdd794d96-scf2h                     1/1     Running   0          3h22m
+
+--- application status ---
+NAME         SYNC STATUS   HEALTH STATUS
+cloudforge   Synced        Healthy
+
+--- application detail (sync/health/source) ---
+sync status: Synced
+health status: Healthy
+synced revision: eb7a8f54073e11a728d48eec0ae54ce4092cf497
+source path: kubernetes/overlays/dev
+repo: https://github.com/AkhilTejaDoosari/cloudforge-platform
+
+--- managed resources ---
+ConfigMap/backend-config -> Synced / 
+Namespace/cloudforge-dev -> Synced / 
+PersistentVolumeClaim/postgres-data -> Synced / Healthy
+Service/backend -> Synced / Healthy
+Service/frontend -> Synced / Healthy
+Service/postgres -> Synced / Healthy
+Deployment/backend -> Synced / Healthy
+Deployment/frontend -> Synced / Healthy
+Deployment/postgres -> Synced / Healthy
+HorizontalPodAutoscaler/backend -> Synced / Healthy
+Ingress/cloudforge -> Synced / Healthy

@@ -1,0 +1,66 @@
+=== CloudForge — Observability Validation Evidence (Prometheus, Grafana, Loki) ===
+Generated: 2026-09-01 00:53:02 UTC
+
+--- monitoring namespace pods ---
+NAME                                                        READY   STATUS    RESTARTS       AGE
+kube-prometheus-stack-grafana-64cb5d6876-7h8vk              3/3     Running   1 (3h7m ago)   3h8m
+kube-prometheus-stack-kube-state-metrics-5bd8d74674-s86kd   1/1     Running   0              3h15m
+kube-prometheus-stack-operator-7f48b5d5b8-w9v7r             1/1     Running   0              3h15m
+kube-prometheus-stack-prometheus-node-exporter-gt2lx        1/1     Running   0              3h15m
+loki-0                                                      1/1     Running   0              3h13m
+loki-promtail-7dc69                                         1/1     Running   0              3h13m
+prometheus-kube-prometheus-stack-prometheus-0               2/2     Running   0              3h15m
+
+--- Prometheus active targets, by job (up/down counts) ---
+Total active targets: 16
+  apiserver: 1 up, 0 down
+  coredns: 2 up, 0 down
+  kube-controller-manager: 0 up, 1 down
+  kube-etcd: 0 up, 1 down
+  kube-prometheus-stack-grafana: 1 up, 0 down
+  kube-prometheus-stack-operator: 1 up, 0 down
+  kube-prometheus-stack-prometheus: 2 up, 0 down
+  kube-proxy: 0 up, 1 down
+  kube-scheduler: 0 up, 1 down
+  kube-state-metrics: 1 up, 0 down
+  kubelet: 3 up, 0 down
+  node-exporter: 1 up, 0 down
+
+Note: kube-controller-manager/kube-etcd/kube-proxy/kube-scheduler show
+down -- a known kind limitation (those control-plane components bind
+to localhost-only inside the kind node container), not a misconfig.
+kubelet, kube-state-metrics, and node-exporter (everything this
+dashboard set actually depends on) are up.
+
+--- live query: per-pod CPU usage, cloudforge-dev namespace ---
+  frontend-658b58c97c-xbqlh: 0.000844 cores
+  frontend-658b58c97c-tbcfp: 0.000413 cores
+  frontend-658b58c97c-lfbbp: 0.000405 cores
+  postgres-74f58597d5-zv5tf: 0.009871 cores
+  backend-7d8dddd8fb-xl6sf: 0.006282 cores
+  backend-7d8dddd8fb-x6mx5: 0.005644 cores
+
+--- live query: deployment available replicas, cloudforge-dev namespace ---
+  backend: 2 available
+  frontend: 3 available
+  postgres: 1 available
+
+--- Loki: real backend log lines from the last 10 minutes ---
+  INFO:     10.244.0.1:38376 - "GET /health HTTP/1.1" 200 OK
+  INFO:     10.244.0.1:38368 - "GET /health HTTP/1.1" 200 OK
+  INFO:     10.244.0.1:50562 - "GET /health HTTP/1.1" 200 OK
+  INFO:     10.244.0.1:50556 - "GET /health HTTP/1.1" 200 OK
+  INFO:     10.244.0.1:50548 - "GET /health HTTP/1.1" 200 OK
+
+--- Grafana: registered datasources (via its own API) ---
+  Alertmanager -> alertmanager -> isDefault: False
+  Loki -> loki -> isDefault: False
+  Prometheus -> prometheus -> isDefault: True
+
+--- Grafana: dashboard count (real shipped dashboards, not cosmetic) ---
+  28 dashboards
+   - CoreDNS
+   - etcd
+   - Grafana Overview
+   - Kubernetes / API server
+   - Kubernetes / Compute Resources /  Multi-Cluster

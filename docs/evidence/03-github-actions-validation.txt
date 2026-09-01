@@ -1,0 +1,67 @@
+=== CloudForge — GitHub Actions CI Validation Evidence ===
+Generated: 2026-08-31 22:20:44 UTC
+Repository: github.com/AkhilTejaDoosari/cloudforge-platform (private)
+
+--- recent CI runs on main (all green) ---
+completed	success	Phase 9: reliability + security testing, all 10 tests with real evidence	CI	main	push	33443880918	2m19s	2026-08-31T21:57:08Z
+completed	success	Revert "Phase 9 test: deliberately broken deployment (nonexistent ima…	CI	main	push	33443726871	2m4s	2026-08-31T21:55:09Z
+completed	success	Phase 9 test: deliberately broken deployment (nonexistent image tag)	CI	main	push	33443653366	2m17s	2026-08-31T21:54:14Z
+completed	success	Phase 8: Prometheus, Grafana, Loki via Helm, verified end-to-end	CI	main	push	33443098024	2m40s	2026-08-31T21:47:16Z
+completed	success	Phase 7: ArgoCD GitOps, verified end-to-end on local kind cluster	CI	main	push	33442179737	2m11s	2026-08-31T21:36:06Z
+completed	success	Phase 7 GitOps demo: bump frontend replicas 2 -> 3	CI	main	push	33442072153	2m32s	2026-08-31T21:34:52Z
+completed	success	Phase 7 prep: remove kustomize secretGenerator for ArgoCD compatibility	CI	main	push	33442000841	2m20s	2026-08-31T21:34:01Z
+completed	success	Phase 5: modular AWS Terraform infrastructure (code + validation, not…	CI	main	push	33420208764	2m15s	2026-08-31T17:33:28Z
+completed	success	Document Phase 4 CI verification: real Actions run, three bugs found …	CI	main	push	33418881087	2m29s	2026-08-31T17:18:51Z
+completed	success	Fix SARIF upload blocking the pipeline on a private repo	CI	main	push	33418571496	2m40s	2026-08-31T17:15:25Z
+
+--- most recent run detail (final state) ---
+
+✓ main CI · 33443880918
+Triggered via push about 23 minutes ago
+
+JOBS
+✓ Test backend in 12s (ID 99658301466)
+✓ Build, scan & publish (backend) in 1m26s (ID 99658362104)
+✓ Build, scan & publish (frontend) in 2m3s (ID 99658362137)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Test backend: .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, docker/build-push-action@v6, docker/setup-buildx-action@v3, github/codeql-action/upload-sarif@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Build, scan & publish (backend): .github#2
+
+! Failed to gather information for telemetry: Resource not accessible by integration - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run. Will skip sending status report.
+Build, scan & publish (backend): .github#19
+
+X Resource not accessible by integration - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run
+Build, scan & publish (backend): .github#18
+
+! Failed to gather information for telemetry: Resource not accessible by integration - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run. Will skip sending status report.
+Build, scan & publish (backend): .github#14
+
+! CodeQL Action v3 will be deprecated in December 2026. Please update all occurrences of the CodeQL Action in your workflow files to v4. For more information, see https://github.blog/changelog/2025-10-28-upcoming-deprecation-of-codeql-action-v3/
+Build, scan & publish (backend): .github#13
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, docker/build-push-action@v6, docker/setup-buildx-action@v3, github/codeql-action/upload-sarif@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Build, scan & publish (frontend): .github#2
+
+! Failed to gather information for telemetry: Resource not accessible by integration - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run. Will skip sending status report.
+Build, scan & publish (frontend): .github#19
+
+X Resource not accessible by integration - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run
+Build, scan & publish (frontend): .github#18
+
+! Failed to gather information for telemetry: Resource not accessible by integration - https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run. Will skip sending status report.
+Build, scan & publish (frontend): .github#14
+
+! CodeQL Action v3 will be deprecated in December 2026. Please update all occurrences of the CodeQL Action in your workflow files to v4. For more information, see https://github.blog/changelog/2025-10-28-upcoming-deprecation-of-codeql-action-v3/
+Build, scan & publish (frontend): .github#13
+
+
+ARTIFACTS
+AkhilTejaDoosari~cloudforge-platform~QGBPJL.dockerbuild
+AkhilTejaDoosari~cloudforge-platform~SJJMTH.dockerbuild
+
+For more information about a job, try: gh run view --job=<job-id>
+View this run on GitHub: https://github.com/AkhilTejaDoosari/cloudforge-platform/actions/runs/33443880918

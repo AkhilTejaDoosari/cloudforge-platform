@@ -1,0 +1,50 @@
+=== CloudForge — Terraform Validation Evidence ===
+Generated: 2026-08-31 22:21:53 UTC
+IMPORTANT: this validates the Terraform CODE. No AWS resources were
+provisioned by terraform apply -- see 05-terraform-plan-summary.txt
+for the plan that was reviewed but never applied.
+
+--- terraform fmt -recursive -check (exit 0 = no formatting issues) ---
+exit code: 0
+
+--- terraform init -backend=false (no AWS credentials/access needed) ---
+- Installed hashicorp/random v3.9.0 (signed by HashiCorp)
+- Installing hashicorp/http v3.6.1...
+- Installed hashicorp/http v3.6.1 (signed by HashiCorp)
+- Installing hashicorp/tls v4.3.0...
+- Installed hashicorp/tls v4.3.0 (signed by HashiCorp)
+
+Terraform has been successfully initialized!
+
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+
+--- terraform validate ---
+Success! The configuration is valid.
+
+--- tfsec (static security scan against the composed dev environment) ---
+  total                26.570751ms
+
+  counts
+  ──────────────────────────────────────────
+  modules downloaded   0
+  modules processed    6
+  blocks processed     149
+  files read           26
+
+  results
+  ──────────────────────────────────────────
+  passed               28
+  ignored              1
+  critical             0
+  high                 0
+  medium               9
+  low                  4
+
+  28 passed, 1 ignored, 13 potential problem(s) detected.
+

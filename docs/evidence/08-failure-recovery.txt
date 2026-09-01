@@ -1,0 +1,80 @@
+=== CloudForge — Failure & Recovery Testing Evidence ===
+
+This summarizes the 6 reliability tests actually executed in Phase 9 (see
+docs/phases.md's Phase 9 notes for the full, detailed narrative including
+two real bugs discovered along the way). Every result below was captured
+from real command output during the session, not asserted.
+
+--- Test 1: backend pod delete -> Kubernetes recreates it ---
+kubectl delete pod backend-7d8dddd8fb-hk5nk -n cloudforge-dev
+Result: new pod backend-7d8dddd8fb-9g26q reached Ready in 7s.
+
+--- Test 2: frontend pod delete -> Kubernetes recreates it ---
+kubectl delete pod frontend-658b58c97c-ph44p -n cloudforge-dev
+Result: new pod frontend-658b58c97c-lfbbp reached Ready in 6s.
+
+--- Test 3: PostgreSQL stopped -> dependency behavior -> recovery ---
+First attempt (kubectl scale postgres --replicas=0) was immediately undone
+by ArgoCD's own selfHeal -- a real finding, not a test artifact: Phase 7's
+GitOps automation actively resists exactly this kind of manual chaos
+injection, since replicas: 1 is the Git-committed desired state.
+
+Correct procedure used: temporarily disabled
+spec.syncPolicy.automated on the Application, re-ran the test cleanly:
+  - /health during outage:  {"status":"ok","uptime_seconds":...}
+  - /api/status during outage: {"backend":"ok","database":"disconnected",
+    "database_error":"OperationalError"}
+  - backend pods stayed Running/Ready throughout (no crash, no restart)
+  - after restoring postgres: {"backend":"ok","database":"connected",
+    "database_error":null} -- self-healed with zero backend restarts
+Re-enabled automated sync afterward, confirmed Synced/Healthy.
+
+--- Test 4: readiness probes ---
+Confirmed live config on all 3 workloads:
+  backend:  httpGet /health:8000, periodSeconds=5, initialDelaySeconds=3
+  frontend: httpGet /:8080, periodSeconds=5, initialDelaySeconds=2
+  postgres: exec pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+Already exercised indirectly by tests 1-2: `kubectl wait
+--for=condition=ready` only succeeds once the readiness probe passes.
+
+--- Test 5: liveness probes -- real restart triggered, not just inspected ---
+First attempt: SIGSTOP then SIGKILL sent directly to the backend
+container's PID 1 via kubectl exec. Neither had any effect -- a genuine
+finding: Linux specially protects PID 1 inside a container's PID namespace
+from signals it hasn't installed a handler for, even normally-uncatchable
+ones (SIGKILL included, in this environment).
+
+Pivoted to testing the actual mechanism: patched the backend's
+livenessProbe.httpGet.path to a nonexistent endpoint (readiness probe left
+untouched, to isolate that the LIVENESS check specifically causes the
+restart). Captured the exact kubelet events:
+  Warning  Unhealthy  kubelet  Liveness probe failed: HTTP probe failed
+                                with statuscode: 404
+  Normal   Killing    kubelet  Container backend failed liveness probe,
+                                will be restarted
+RESTARTS incremented 0 -> 1. Reverted via `kubectl apply -k` (restoring
+git-tracked state), re-enabled automated sync.
+
+--- Test 6: deliberately broken deployment + rollback (GitOps-correct) ---
+Changed backend's image to a nonexistent tag
+(cloudforge-backend:broken-deliberate-test), committed, pushed (407467c).
+ArgoCD synced it. New pod failure captured exactly:
+  Warning  Failed  kubelet  Failed to pull image
+    "cloudforge-backend:broken-deliberate-test": failed to pull and unpack
+    image "docker.io/library/cloudforge-backend:broken-deliberate-test":
+    failed to resolve reference ...: pull access denied, repository does
+    not exist or may require authorization
+  Warning  Failed  kubelet  Error: ImagePullBackOff
+Critically: the two OLD pods stayed Running throughout -- Kubernetes'
+rolling-update strategy prevented any outage. /api/status kept responding
+normally (database: connected) the entire time.
+
+Rolled back with `git revert --no-edit HEAD` + push (6e50011) -- not a raw
+`kubectl rollout undo`, which ArgoCD's selfHeal would have immediately
+fought since it would drift from Git. ArgoCD synced the revert:
+  sync status: Synced
+  health status: Healthy
+  synced revision: 6e50011b8593658164943f1bbfe69fa496a9d5b4
+Deployment recovered onto the ORIGINAL ReplicaSet (7d8dddd8fb) -- confirmed
+via kubectl rollout status ("successfully rolled out") and a final
+/api/status check returning database: connected.

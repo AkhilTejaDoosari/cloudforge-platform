@@ -1,0 +1,45 @@
+=== CloudForge — Kubernetes Validation Evidence (local kind cluster) ===
+Generated: 2026-08-31 21:58:05 UTC
+
+--- cluster nodes ---
+NAME                       STATUS   ROLES           AGE    VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                       KERNEL-VERSION             CONTAINER-RUNTIME
+cloudforge-control-plane   Ready    control-plane   5h2m   v1.37.0   172.22.0.2    <none>        Debian GNU/Linux 13 (trixie)   6.12.65-linuxkit (arm64)   containerd://2.3.4
+
+--- application pods (cloudforge-dev namespace) ---
+NAME                        READY   STATUS    RESTARTS   AGE     IP            NODE                       NOMINATED NODE   READINESS GATES
+backend-7d8dddd8fb-x6mx5    1/1     Running   0          4m27s   10.244.0.44   cloudforge-control-plane   <none>           <none>
+backend-7d8dddd8fb-xl6sf    1/1     Running   0          4m34s   10.244.0.43   cloudforge-control-plane   <none>           <none>
+frontend-658b58c97c-lfbbp   1/1     Running   0          10m     10.244.0.37   cloudforge-control-plane   <none>           <none>
+frontend-658b58c97c-tbcfp   1/1     Running   0          23m     10.244.0.24   cloudforge-control-plane   <none>           <none>
+frontend-658b58c97c-xbqlh   1/1     Running   0          4h59m   10.244.0.12   cloudforge-control-plane   <none>           <none>
+postgres-74f58597d5-zv5tf   1/1     Running   0          8m17s   10.244.0.40   cloudforge-control-plane   <none>           <none>
+
+--- services ---
+NAME       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+backend    ClusterIP   10.96.120.72    <none>        8000/TCP   4h59m
+frontend   ClusterIP   10.96.249.100   <none>        8080/TCP   4h59m
+postgres   ClusterIP   10.96.171.233   <none>        5432/TCP   4h59m
+
+--- ingress ---
+NAME         CLASS   HOSTS              ADDRESS     PORTS   AGE
+cloudforge   nginx   cloudforge.local   localhost   80      4h59m
+
+--- HPA ---
+NAME      REFERENCE            TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+backend   Deployment/backend   cpu: 3%/70%   2         4         2          4h59m
+
+--- deployments ---
+NAME       READY   UP-TO-DATE   AVAILABLE   AGE
+backend    2/2     2            2           4h59m
+frontend   3/3     3            3           4h59m
+postgres   1/1     1            1           4h59m
+
+--- end-to-end request through the real Ingress ---
+{"backend":"ok","database":"connected","database_error":null}
+
+--- readiness/liveness probe config (backend) ---
+{"failureThreshold":3,"httpGet":{"path":"/health","port":8000,"scheme":"HTTP"},"initialDelaySeconds":3,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":1}
+{"failureThreshold":3,"httpGet":{"path":"/health","port":8000,"scheme":"HTTP"},"initialDelaySeconds":5,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":1}
+
+--- resource requests/limits (backend) ---
+{"limits":{"cpu":"300m","memory":"256Mi"},"requests":{"cpu":"100m","memory":"128Mi"}}

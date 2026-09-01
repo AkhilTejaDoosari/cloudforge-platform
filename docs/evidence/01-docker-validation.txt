@@ -1,0 +1,61 @@
+=== CloudForge — Docker Validation Evidence ===
+Generated: 2026-08-31 21:57:23 UTC
+
+--- docker build: backend (multi-stage) ---
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:bc39694ed558f709b2ea908fd1678af6b5d75051e7e1a9be3cf8d05561ab5099 done
+#13 exporting config sha256:f38e989e9b057d7ab3769de12439a51f115d76e544deaff17354c6d758ca6a2f done
+#13 exporting attestation manifest sha256:c3b7ff07e29105f52f8dd192fdf9b93edca33035d2e3931dcf5dc9c48e4aa5c3 done
+#13 exporting manifest list sha256:e5346a20153289866133fa9d801d1382506c94272eaae6accaedb662af2172c8 done
+#13 naming to docker.io/library/cloudforge-backend:evidence done
+#13 unpacking to docker.io/library/cloudforge-backend:evidence done
+#13 DONE 0.0s
+
+--- docker build: frontend ---
+
+#10 exporting to image
+#10 exporting layers done
+#10 exporting manifest sha256:c0a41b4fa2a98e61195e9d25502f042731dbaa6952ff613d0e6495cd5aec89e2 done
+#10 exporting config sha256:9bb53cc878715d9384703e13ff540e882154d6514bca82f91f5cfe7ef9857078 done
+#10 exporting attestation manifest sha256:190534f20462d210644e7a97184b0d127eef27e770e2af8389b99e895060c805 done
+#10 exporting manifest list sha256:67318f2e5c7b4cba2c8b7c720c730e550547ff5d886488f6c0bdbc772a506356 done
+#10 naming to docker.io/library/cloudforge-frontend:evidence done
+#10 unpacking to docker.io/library/cloudforge-frontend:evidence done
+#10 DONE 0.1s
+
+--- image sizes ---
+REPOSITORY            TAG        SIZE
+cloudforge-frontend   evidence   96.4MB
+cloudforge-backend    evidence   310MB
+
+--- non-root verification (image-level default user) ---
+backend default user: appuser
+frontend default user: 101
+
+--- docker-compose: full stack up, health check, teardown ---
+ Container cloudforge-platform-frontend-1 Creating 
+ Container cloudforge-platform-frontend-1 Created 
+ Container cloudforge-platform-postgres-1 Starting 
+ Container cloudforge-platform-postgres-1 Started 
+ Container cloudforge-platform-postgres-1 Waiting 
+ Container cloudforge-platform-postgres-1 Healthy 
+ Container cloudforge-platform-backend-1 Starting 
+ Container cloudforge-platform-backend-1 Started 
+ Container cloudforge-platform-frontend-1 Starting 
+ Container cloudforge-platform-frontend-1 Started 
+
+docker compose ps:
+NAME                             IMAGE                          COMMAND                  SERVICE    CREATED          STATUS                    PORTS
+cloudforge-platform-backend-1    cloudforge-platform-backend    "uvicorn app.main:ap…"   backend    22 seconds ago   Up 15 seconds (healthy)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+cloudforge-platform-frontend-1   cloudforge-platform-frontend   "/docker-entrypoint.…"   frontend   22 seconds ago   Up 15 seconds (healthy)   0.0.0.0:3000->8080/tcp, [::]:3000->8080/tcp
+cloudforge-platform-postgres-1   postgres:16-alpine             "docker-entrypoint.s…"   postgres   22 seconds ago   Up 21 seconds (healthy)   5432/tcp
+
+end-to-end health check:
+{"backend":"ok","database":"connected","database_error":null}
+ Container cloudforge-platform-postgres-1 Stopped 
+ Container cloudforge-platform-postgres-1 Removing 
+ Container cloudforge-platform-postgres-1 Removed 
+ Network cloudforge-platform_cloudforge Removing 
+ Network cloudforge-platform_cloudforge Removed 

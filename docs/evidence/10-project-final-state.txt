@@ -1,0 +1,142 @@
+=== CloudForge — Final Project State Evidence ===
+Generated: 2026-09-01 00:54:31 UTC
+
+--- git log (last 15 commits) ---
+eb7a8f5 (HEAD -> main, origin/main) Phase 9: reliability + security testing, all 10 tests with real evidence
+6e50011 Revert "Phase 9 test: deliberately broken deployment (nonexistent image tag)"
+407467c Phase 9 test: deliberately broken deployment (nonexistent image tag)
+a26de38 Phase 8: Prometheus, Grafana, Loki via Helm, verified end-to-end
+be2e3ed Phase 7: ArgoCD GitOps, verified end-to-end on local kind cluster
+ef30a5d Phase 7 GitOps demo: bump frontend replicas 2 -> 3
+303fe76 Phase 7 prep: remove kustomize secretGenerator for ArgoCD compatibility
+a875712 Phase 6: rewrite EKS module for self-managed workers (KodeKloud sandbox)
+d358169 Phase 5: modular AWS Terraform infrastructure (code + validation, not applied)
+170de1b Document Phase 4 CI verification: real Actions run, three bugs found and fixed
+4b9f225 Fix SARIF upload blocking the pipeline on a private repo
+6cb481c Fix trivy-action pin again: v0.36.0, not 0.36.0
+ab6cc24 Fix trivy-action version pin (v0.28.0, not 0.28.0)
+df28f92 Phase 4: GitHub Actions CI — test, build, Trivy scan, publish to ECR
+dc4484a Phase 3: deploy to local Kubernetes (kind), verify health end-to-end
+
+--- kubectl get nodes ---
+NAME                       STATUS   ROLES           AGE     VERSION
+cloudforge-control-plane   Ready    control-plane   7h59m   v1.37.0
+
+--- kubectl get namespaces ---
+NAME                 STATUS   AGE
+argocd               Active   3h24m
+cloudforge-dev       Active   7h55m
+default              Active   7h59m
+ingress-nginx        Active   7h58m
+kube-node-lease      Active   7h59m
+kube-public          Active   7h59m
+kube-system          Active   7h59m
+local-path-storage   Active   7h59m
+monitoring           Active   3h17m
+
+--- kubectl get deployments -A ---
+NAMESPACE            NAME                                       READY   UP-TO-DATE   AVAILABLE   AGE
+argocd               argocd-applicationset-controller           1/1     1            1           3h24m
+argocd               argocd-dex-server                          1/1     1            1           3h24m
+argocd               argocd-notifications-controller            1/1     1            1           3h24m
+argocd               argocd-redis                               1/1     1            1           3h24m
+argocd               argocd-repo-server                         1/1     1            1           3h24m
+argocd               argocd-server                              1/1     1            1           3h24m
+cloudforge-dev       backend                                    2/2     2            2           7h55m
+cloudforge-dev       frontend                                   3/3     3            3           7h55m
+cloudforge-dev       postgres                                   1/1     1            1           7h55m
+ingress-nginx        ingress-nginx-controller                   1/1     1            1           7h58m
+kube-system          coredns                                    2/2     2            2           7h59m
+kube-system          metrics-server                             1/1     1            1           7h58m
+local-path-storage   local-path-provisioner                     1/1     1            1           7h59m
+monitoring           kube-prometheus-stack-grafana              1/1     1            1           3h17m
+monitoring           kube-prometheus-stack-kube-state-metrics   1/1     1            1           3h17m
+monitoring           kube-prometheus-stack-operator             1/1     1            1           3h17m
+
+--- kubectl get pods -A ---
+NAMESPACE            NAME                                                        READY   STATUS      RESTARTS        AGE
+argocd               argocd-application-controller-0                             1/1     Running     0               3h24m
+argocd               argocd-applicationset-controller-cb5b4cff8-lmb5h            1/1     Running     0               3h24m
+argocd               argocd-dex-server-5c88cd987-w4prp                           1/1     Running     0               3h24m
+argocd               argocd-notifications-controller-794b8c7979-pw959            1/1     Running     0               3h24m
+argocd               argocd-redis-7745d5664-z9t69                                1/1     Running     0               3h24m
+argocd               argocd-repo-server-f74768b-rndrl                            1/1     Running     0               3h24m
+argocd               argocd-server-5cdd794d96-scf2h                              1/1     Running     0               3h24m
+cloudforge-dev       backend-7d8dddd8fb-x6mx5                                    1/1     Running     0               3h
+cloudforge-dev       backend-7d8dddd8fb-xl6sf                                    1/1     Running     0               3h1m
+cloudforge-dev       frontend-658b58c97c-lfbbp                                   1/1     Running     0               3h6m
+cloudforge-dev       frontend-658b58c97c-tbcfp                                   1/1     Running     0               3h19m
+cloudforge-dev       frontend-658b58c97c-xbqlh                                   1/1     Running     0               7h55m
+cloudforge-dev       postgres-74f58597d5-zv5tf                                   1/1     Running     0               3h4m
+ingress-nginx        ingress-nginx-admission-create-v2jzz                        0/1     Completed   0               7h58m
+ingress-nginx        ingress-nginx-admission-patch-8n2cd                         0/1     Completed   2 (7h58m ago)   7h58m
+ingress-nginx        ingress-nginx-controller-746c8469d8-cfd89                   1/1     Running     0               7h58m
+kube-system          coredns-559f6c778d-f646n                                    1/1     Running     0               7h59m
+kube-system          coredns-559f6c778d-zq7j6                                    1/1     Running     0               7h59m
+kube-system          etcd-cloudforge-control-plane                               1/1     Running     0               7h59m
+kube-system          kindnet-95jcl                                               1/1     Running     0               7h59m
+kube-system          kube-apiserver-cloudforge-control-plane                     1/1     Running     0               7h59m
+kube-system          kube-controller-manager-cloudforge-control-plane            1/1     Running     0               7h59m
+kube-system          kube-proxy-ln5xn                                            1/1     Running     0               7h59m
+kube-system          kube-scheduler-cloudforge-control-plane                     1/1     Running     0               7h59m
+kube-system          metrics-server-84c99cb944-hrpkp                             1/1     Running     0               7h58m
+local-path-storage   local-path-provisioner-75f7fc7dc5-rqqdk                     1/1     Running     0               7h59m
+monitoring           kube-prometheus-stack-grafana-64cb5d6876-7h8vk              3/3     Running     1 (3h9m ago)    3h9m
+monitoring           kube-prometheus-stack-kube-state-metrics-5bd8d74674-s86kd   1/1     Running     0               3h17m
+monitoring           kube-prometheus-stack-operator-7f48b5d5b8-w9v7r             1/1     Running     0               3h17m
+monitoring           kube-prometheus-stack-prometheus-node-exporter-gt2lx        1/1     Running     0               3h17m
+monitoring           loki-0                                                      1/1     Running     0               3h15m
+monitoring           loki-promtail-7dc69                                         1/1     Running     0               3h15m
+monitoring           prometheus-kube-prometheus-stack-prometheus-0               2/2     Running     0               3h17m
+
+--- kubectl get svc -A ---
+NAMESPACE        NAME                                             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                        AGE
+argocd           argocd-applicationset-controller                 ClusterIP   10.96.29.169    <none>        7000/TCP,8080/TCP              3h24m
+argocd           argocd-dex-server                                ClusterIP   10.96.128.137   <none>        5556/TCP,5557/TCP,5558/TCP     3h24m
+argocd           argocd-metrics                                   ClusterIP   10.96.125.72    <none>        8082/TCP                       3h24m
+argocd           argocd-notifications-controller-metrics          ClusterIP   10.96.100.185   <none>        9001/TCP                       3h24m
+argocd           argocd-redis                                     ClusterIP   10.96.111.30    <none>        6379/TCP                       3h24m
+argocd           argocd-repo-server                               ClusterIP   10.96.62.106    <none>        8081/TCP,8084/TCP              3h24m
+argocd           argocd-server                                    ClusterIP   10.96.31.22     <none>        80/TCP,443/TCP                 3h24m
+argocd           argocd-server-metrics                            ClusterIP   10.96.31.133    <none>        8083/TCP                       3h24m
+cloudforge-dev   backend                                          ClusterIP   10.96.120.72    <none>        8000/TCP                       7h55m
+cloudforge-dev   frontend                                         ClusterIP   10.96.249.100   <none>        8080/TCP                       7h55m
+cloudforge-dev   postgres                                         ClusterIP   10.96.171.233   <none>        5432/TCP                       7h55m
+default          kubernetes                                       ClusterIP   10.96.0.1       <none>        443/TCP                        7h59m
+ingress-nginx    ingress-nginx-controller                         NodePort    10.96.42.70     <none>        80:31458/TCP,443:32058/TCP     7h58m
+ingress-nginx    ingress-nginx-controller-admission               ClusterIP   10.96.222.0     <none>        443/TCP                        7h58m
+kube-system      kube-dns                                         ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP,9153/TCP         7h59m
+kube-system      kube-prometheus-stack-coredns                    ClusterIP   None            <none>        9153/TCP                       3h17m
+kube-system      kube-prometheus-stack-kube-controller-manager    ClusterIP   None            <none>        10257/TCP                      3h17m
+kube-system      kube-prometheus-stack-kube-etcd                  ClusterIP   None            <none>        2381/TCP                       3h17m
+kube-system      kube-prometheus-stack-kube-proxy                 ClusterIP   None            <none>        10249/TCP                      3h17m
+kube-system      kube-prometheus-stack-kube-scheduler             ClusterIP   None            <none>        10259/TCP                      3h17m
+kube-system      kube-prometheus-stack-kubelet                    ClusterIP   None            <none>        10250/TCP,4194/TCP,10255/TCP   3h17m
+kube-system      metrics-server                                   ClusterIP   10.96.60.149    <none>        443/TCP                        7h58m
+monitoring       kube-prometheus-stack-grafana                    ClusterIP   10.96.11.241    <none>        80/TCP                         3h17m
+monitoring       kube-prometheus-stack-kube-state-metrics         ClusterIP   10.96.19.133    <none>        8080/TCP                       3h17m
+monitoring       kube-prometheus-stack-operator                   ClusterIP   10.96.181.53    <none>        443/TCP                        3h17m
+monitoring       kube-prometheus-stack-prometheus                 ClusterIP   10.96.21.213    <none>        9090/TCP,8080/TCP              3h17m
+monitoring       kube-prometheus-stack-prometheus-node-exporter   ClusterIP   10.96.142.85    <none>        9100/TCP                       3h17m
+monitoring       loki                                             ClusterIP   10.96.222.88    <none>        3100/TCP                       3h15m
+monitoring       loki-headless                                    ClusterIP   None            <none>        3100/TCP                       3h15m
+monitoring       loki-memberlist                                  ClusterIP   None            <none>        7946/TCP                       3h15m
+monitoring       prometheus-operated                              ClusterIP   None            <none>        9090/TCP                       3h17m
+
+--- ArgoCD Application status ---
+NAME         SYNC STATUS   HEALTH STATUS
+cloudforge   Synced        Healthy
+synced revision: eb7a8f54073e11a728d48eec0ae54ce4092cf497
+
+--- Application end-to-end verification (via real Ingress) ---
+frontend:
+  HTTP 200
+backend /health:
+{"status":"ok","uptime_seconds":10866.83}
+backend /api/status (database connectivity):
+{"backend":"ok","database":"connected","database_error":null}
+
+--- Summary ---
+HEAD commit:        eb7a8f54073e11a728d48eec0ae54ce4092cf497
+ArgoCD sync/health: Synced / Healthy
+Cluster uptime:     2026-08-31T16:55:17Z

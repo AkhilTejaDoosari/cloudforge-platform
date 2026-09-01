@@ -1,0 +1,68 @@
+=== CloudForge — Terraform Plan Summary (AWS, KodeKloud sandbox) ===
+
+IMPORTANT: this documents a `terraform plan` that was reviewed against a
+real, temporary KodeKloud AWS sandbox account. terraform apply was
+DELIBERATELY NOT RUN — the KodeKloud session's STS credentials expired
+twice during the work, and the decision was made to stop AWS provisioning
+for that session rather than fight credential lifecycle friction further.
+No AWS resources described below were ever created. This file is evidence
+of a validated, reviewed plan only.
+
+--- Plan result ---
+Plan: 35 to add, 0 to change, 0 to destroy.
+
+--- Resource breakdown (by type) ---
+aws_autoscaling_group          1   (self-managed worker node group)
+aws_ecr_lifecycle_policy       2   (cloudforge/backend, cloudforge/frontend)
+aws_ecr_repository             2   (cloudforge/backend, cloudforge/frontend)
+aws_eip                        1   (NAT Gateway)
+aws_eks_access_entry           1   (worker node cluster auth, type EC2_LINUX)
+aws_eks_cluster                1
+aws_iam_instance_profile       1   (worker nodes)
+aws_iam_openid_connect_provider 2  (EKS IRSA + GitHub Actions CI)
+aws_iam_role                   3   (EKS cluster "eksClusterRole", EKS
+                                     worker node, GitHub Actions CI role)
+aws_iam_role_policy            1   (GitHub Actions ECR push, scoped to the
+                                     two ECR repo ARNs, not ecr:* on *)
+aws_iam_role_policy_attachment 4   (EKS cluster + worker node policies)
+aws_internet_gateway            1
+aws_kms_alias                   1
+aws_kms_key                     1   (EKS Kubernetes Secrets envelope
+                                      encryption)
+aws_launch_template              1   (self-managed worker nodes, AL2023,
+                                       AMI resolved via SSM parameter)
+aws_nat_gateway                  1   (single NAT, cost tradeoff — documented)
+aws_route_table                  2
+aws_route_table_association      4
+aws_subnet                       4   (2 public, 2 private, 2 AZs)
+aws_vpc                          1
+
+Explicitly ABSENT from this plan (by design, not by omission):
+- aws_eks_node_group  — replaced with self-managed launch template + ASG,
+  because this KodeKloud sandbox account's IAM policy does not grant
+  eks:CreateNodegroup (confirmed via aws iam simulate-principal-policy, a
+  read-only permission check — no resources were created just to test this).
+- aws_db_instance / RDS — this account's IAM policy does not grant
+  rds:CreateDBInstance either. Gated behind a clean `enable_rds` variable
+  (default true; false only in this session's gitignored tfvars) rather
+  than deleted from the codebase or worked around with `-target`.
+
+--- Why the architecture differs from a standard EKS setup ---
+Confirmed via `aws iam simulate-principal-policy` (read-only; the specific
+commands and full reasoning are in docs/phases.md's Phase 6 notes):
+- eks:CreateCluster: allowed
+- iam:PassRole to eks.amazonaws.com: allowed ONLY for a role named exactly
+  "eksClusterRole" (not any name) — this project's EKS module has a
+  `cluster_iam_role_name` override variable specifically for this.
+- eks:CreateNodegroup: not granted by any attached policy.
+- eks:CreateFargateProfile: explicitly denied.
+- ec2:RunInstances, autoscaling:CreateAutoScalingGroup, iam:PassRole to
+  ec2.amazonaws.com: all allowed — the self-managed worker node path.
+- rds:CreateDBInstance: not granted by any attached policy.
+
+--- Validation commands run against this plan (see 04-terraform-validation.txt) ---
+terraform fmt -recursive -check   -> clean
+terraform init -backend=false     -> succeeds, no AWS access needed
+terraform validate                -> Success! The configuration is valid.
+tfsec .                           -> 0 CRITICAL, 0 HIGH, 1 documented ignore
+terraform plan -out=tfplan        -> 35 to add, 0 to change, 0 to destroy
